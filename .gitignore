@@ -11,3 +11,11 @@ build/
 output/
 data/
 models/
+
+# Experiment artifacts: keep the scripts, drop the outputs.
+experiments/**/out/
+experiments/**/*.png
+experiments/**/*.jpg
+experiments/**/*.mp4
+experiments/**/*.jsonl
+experiments/**/*.npz

@@ -46,14 +46,27 @@ The first milestone is a **local, recording-first pipeline**. Live Zoom/Teams/Me
 
 ## Development
 
-Python 3.11+
+Python 3.11+. Always work inside an isolated virtual environment; a global
+interpreter may carry unrelated plugins that break test collection.
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
+
+pytest        # tests
+ruff check .  # lint
+mypy src      # types
 ```
+
+Optional model adapters are extras and are never imported by the core:
+
+```bash
+pip install -e ".[dev,face,appearance,ocr]"
+```
+
+Research decisions live in [docs/research/](docs/research); the throwaway code
+behind them lives in [experiments/](experiments).
 
 ## Roadmap
 

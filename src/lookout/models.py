@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class GazeTarget(str, Enum):
+class GazeTarget(StrEnum):
     UNKNOWN = "unknown"
     OFF_SCREEN = "off_screen"
     NOT_VISIBLE = "not_visible"
