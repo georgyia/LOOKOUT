@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import artifacts, report, runrecord
+from .coverage import Coverage, detect_degradations
 from .evaluate import evaluate, load_truth
 from .pipeline import (
     EVENTS,
@@ -50,6 +51,7 @@ def _adapter(role: str, implementation: str, model: str | None, library: str) ->
 def _write_reports(
     out: Path,
     config: AnalysisConfig,
+    coverage: Coverage,
     *,
     video: str | None = None,
     adapters: tuple[AdapterInfo, ...] = (),
@@ -74,6 +76,8 @@ def _write_reports(
     record = runrecord.build_record(
         config,
         results,
+        coverage=coverage,
+        degradations=detect_degradations(coverage),
         video=video,
         adapters=adapters,
         command=sys.argv,
@@ -94,6 +98,24 @@ def _read_existing(out: Path) -> RunRecord | None:
         return None
 
 
+def _print_summary(record: RunRecord) -> None:
+    """Print the funnel and what the run had to settle for, not just the totals."""
+
+    print(
+        json.dumps(
+            {
+                "coverage": runrecord.coverage_to_dict(record.coverage)
+                if record.coverage
+                else None,
+                "degradations": [
+                    {"code": d.code, "detail": d.detail} for d in record.degradations
+                ],
+            },
+            indent=2,
+        )
+    )
+
+
 def _cmd_analyze(args: argparse.Namespace) -> None:
     from .face import MediaPipeFaceObserver
 
@@ -112,18 +134,20 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
         adapters.append(_adapter("gaze", "geometric", None, "numpy"))
 
     config = AnalysisConfig(target_fps=args.fps)
-    summary = analyze(args.video, args.out, stage, config)
-    _write_reports(Path(args.out), config, video=args.video, adapters=tuple(adapters))
-    print(json.dumps(summary, indent=2))
+    coverage = analyze(args.video, args.out, stage, config)
+    record = _write_reports(
+        Path(args.out), config, coverage, video=args.video, adapters=tuple(adapters)
+    )
+    _print_summary(record)
 
 
 def _cmd_attribute(args: argparse.Namespace) -> None:
     out = Path(args.out)
     existing = _read_existing(out)
     config = AnalysisConfig()
-    summary = attribute(out, config)
-    _write_reports(out, config, provenance_from=existing)
-    print(json.dumps(summary, indent=2))
+    coverage = attribute(out, config)
+    record = _write_reports(out, config, coverage, provenance_from=existing)
+    _print_summary(record)
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> None:

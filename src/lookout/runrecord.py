@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .coverage import Coverage, Degradation, ParticipantCoverage
 from .pipeline import AnalysisConfig
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "AdapterInfo",
     "Provenance",
     "RunRecord",
+    "coverage_to_dict",
     "describe_config",
     "config_hash",
     "file_digest",
@@ -107,11 +109,18 @@ class Provenance:
 
 @dataclass(frozen=True)
 class RunRecord:
-    """One run, as a single serializable document."""
+    """One run, as a single serializable document.
+
+    The field order is the order a reader needs: what produced the numbers, how
+    much of the recording they cover, what the run had to settle for, and only
+    then the numbers themselves.
+    """
 
     provenance: Provenance
     config: dict[str, Any]
     config_overrides: tuple[str, ...] = ()
+    coverage: Coverage | None = None
+    degradations: tuple[Degradation, ...] = ()
     results: dict[str, Any] = field(default_factory=dict)
     disclaimer: str = DISCLAIMER
 
@@ -256,6 +265,8 @@ def build_record(
     config: AnalysisConfig,
     results: dict[str, Any],
     *,
+    coverage: Coverage | None = None,
+    degradations: tuple[Degradation, ...] = (),
     video: str | Path | None = None,
     adapters: tuple[AdapterInfo, ...] = (),
     command: list[str] | None = None,
@@ -274,7 +285,43 @@ def build_record(
         ),
         config=values,
         config_overrides=overrides,
+        coverage=coverage,
+        degradations=degradations,
         results=results,
+    )
+
+
+def coverage_to_dict(coverage: Coverage) -> dict[str, Any]:
+    """Serialize coverage with its derived rates spelled out.
+
+    The rates are the numbers a reader actually reasons about, and recomputing
+    them from the counts is the kind of small step that gets skipped.
+    """
+
+    payload = _plain(coverage)
+    assert isinstance(payload, dict)
+    payload["face_hit_rate"] = round(coverage.face_hit_rate, 4)
+    payload["off_screen_rate"] = round(coverage.off_screen_rate, 4)
+    payload["per_participant"] = [
+        {**entry, "face_hit_rate": round(source.face_hit_rate, 4)}
+        for entry, source in zip(payload["per_participant"], coverage.per_participant, strict=True)
+    ]
+    return payload
+
+
+def _coverage_from_dict(data: dict[str, Any]) -> Coverage:
+    derived = {"per_participant", "layout_sources"}
+    known = {f.name for f in fields(Coverage)} - derived
+    participant_fields = {f.name for f in fields(ParticipantCoverage)}
+    return Coverage(
+        **{key: value for key, value in data.items() if key in known},
+        layout_sources=tuple(data.get("layout_sources", ())),
+        per_participant=tuple(
+            ParticipantCoverage(
+                **{k: v for k, v in entry.items() if k in participant_fields}
+            )
+            for entry in data.get("per_participant", ())
+        ),
     )
 
 
@@ -286,6 +333,8 @@ def to_dict(record: RunRecord) -> dict[str, Any]:
         "provenance": asdict(record.provenance),
         "config": record.config,
         "config_overrides": list(record.config_overrides),
+        "coverage": coverage_to_dict(record.coverage) if record.coverage else None,
+        "degradations": [asdict(d) for d in record.degradations],
         "results": record.results,
     }
 
@@ -304,10 +353,13 @@ def from_dict(data: dict[str, Any]) -> RunRecord:
         video=VideoInfo(**video) if video else None,
         adapters=tuple(AdapterInfo(**a) for a in adapters),
     )
+    coverage = data.get("coverage")
     return RunRecord(
         provenance=provenance,
         config=data.get("config", {}),
         config_overrides=tuple(data.get("config_overrides", ())),
+        coverage=_coverage_from_dict(coverage) if coverage else None,
+        degradations=tuple(Degradation(**d) for d in data.get("degradations", ())),
         results=data.get("results", {}),
         disclaimer=str(data.get("disclaimer", DISCLAIMER)),
     )

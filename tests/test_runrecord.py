@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from lookout.coverage import Coverage, Degradation, ParticipantCoverage
 from lookout.pipeline import AnalysisConfig
 from lookout.runrecord import (
     DISCLAIMER,
@@ -164,3 +165,62 @@ def test_provenance_survives_a_record_without_video_or_adapters(tmp_path: Path) 
     restored = read_record(path)
     assert restored.provenance.video is None
     assert restored.provenance.adapters == ()
+
+
+def test_coverage_and_degradations_round_trip(tmp_path: Path) -> None:
+    coverage = Coverage(
+        frames=10,
+        layouts=1,
+        participants_detected=2,
+        face_attempts=20,
+        face_hits=15,
+        directions=15,
+        points=12,
+        off_screen=3,
+        fixations=6,
+        attributions=6,
+        events=4,
+        layout_sources=("assumed_shared",),
+        per_participant=(
+            ParticipantCoverage("slot_0", face_attempts=10, face_hits=10, directions=10,
+                                points=10, events=3),
+            ParticipantCoverage("slot_1", face_attempts=10, face_hits=5, directions=5,
+                                points=2, off_screen=3, events=1),
+        ),
+    )
+    record = build_record(
+        AnalysisConfig(),
+        {"total_events": 4},
+        coverage=coverage,
+        degradations=(Degradation("layout", "assumed_shared_layout", "detail", "impact"),),
+        created_at=FIXED_TIME,
+    )
+    path = tmp_path / "report.json"
+    write_record(path, record)
+    restored = read_record(path)
+
+    assert restored.coverage == coverage
+    assert restored.degradations[0].code == "assumed_shared_layout"
+
+
+def test_serialized_coverage_spells_out_its_rates(tmp_path: Path) -> None:
+    """The rates are what a reader reasons about; recomputing them gets skipped."""
+
+    coverage = Coverage(
+        face_attempts=20,
+        face_hits=15,
+        directions=15,
+        points=12,
+        off_screen=3,
+        per_participant=(
+            ParticipantCoverage("slot_0", face_attempts=20, face_hits=15, directions=15,
+                                points=12, off_screen=3),
+        ),
+    )
+    path = tmp_path / "report.json"
+    write_record(path, build_record(AnalysisConfig(), {}, coverage=coverage, created_at=FIXED_TIME))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["coverage"]["face_hit_rate"] == 0.75
+    assert payload["coverage"]["off_screen_rate"] == 0.2
+    assert payload["coverage"]["per_participant"][0]["face_hit_rate"] == 0.75
