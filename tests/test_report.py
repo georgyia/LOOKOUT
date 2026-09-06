@@ -1,9 +1,8 @@
 import csv
-import json
 from pathlib import Path
 
 from lookout.models import GazeEvent, LayoutSource
-from lookout.report import DISCLAIMER, summarize, write_csv, write_html, write_json
+from lookout.report import DISCLAIMER, summarize, write_csv, write_html
 
 SOURCE = LayoutSource.ASSUMED_SHARED
 
@@ -22,14 +21,6 @@ def test_summarize_durations_by_target() -> None:
     viewers = summary["viewers"]
     assert isinstance(viewers, dict)
     assert viewers["bob"]["duration_by_target"] == {"alice": 2.0, "carol": 0.5}
-
-
-def test_write_json_includes_disclaimer(tmp_path: Path) -> None:
-    path = tmp_path / "report.json"
-    write_json(path, _events())
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["disclaimer"] == DISCLAIMER
-    assert payload["summary"]["total_events"] == 3
 
 
 def test_write_csv_has_header_and_rows(tmp_path: Path) -> None:

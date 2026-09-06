@@ -7,7 +7,8 @@ import pytest
 from lookout import artifacts
 from lookout.frames import Image
 from lookout.models import GazeDirection, HeadPose
-from lookout.pipeline import EVENTS, GAZE_RAW, LAYOUT, RUN, AnalysisConfig, analyze, attribute
+from lookout.pipeline import EVENTS, GAZE_RAW, LAYOUT, AnalysisConfig, analyze, attribute
+from lookout.runrecord import build_record, read_record, write_record
 
 
 def _grid_frame(w: int = 640, h: int = 360, gutter: int = 10) -> np.ndarray:
@@ -50,7 +51,7 @@ def test_analyze_writes_artifacts_and_events(tmp_path: Path) -> None:
 
     summary = analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
 
-    for name in (GAZE_RAW, LAYOUT, "gaze_screen.jsonl", "attribution.jsonl", EVENTS, RUN):
+    for name in (GAZE_RAW, LAYOUT, "gaze_screen.jsonl", "attribution.jsonl", EVENTS):
         assert (out / name).exists(), name
 
     # Segmentation itself is covered by test_layout; here we only require a
@@ -74,3 +75,26 @@ def test_attribute_rerun_is_reproducible(tmp_path: Path) -> None:
     attribute(out)  # re-run from the raw store only
     second = artifacts.read_events(out / EVENTS)
     assert first == second
+
+
+def test_a_run_can_be_documented_by_a_record(tmp_path: Path) -> None:
+    """The record identifies the recording and the configuration behind a run."""
+
+    video = tmp_path / "clip.avi"
+    _write_video(video)
+    out = tmp_path / "run"
+    config = AnalysisConfig(target_fps=5.0)
+    analyze(video, out, _fake_stage, config)
+
+    events = artifacts.read_events(out / EVENTS)
+    record = build_record(config, {"total_events": len(events)}, video=video)
+    write_record(out / "report.json", record)
+    restored = read_record(out / "report.json")
+
+    assert restored.provenance.video is not None
+    assert restored.provenance.video.sha256 is not None
+    assert restored.provenance.video.width == 640
+    assert restored.provenance.video.height == 360
+    assert restored.config["target_fps"] == 5.0
+    assert restored.config["mapping"]["off_screen_margin"] == 0.05
+    assert restored.results["total_events"] == len(events)

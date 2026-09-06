@@ -5,11 +5,13 @@ pipeline class and no hidden state. ``analyze`` runs observation (video ->
 layouts -> raw gaze) and then attribution; ``attribute`` re-runs only the
 mapping/attribution/event stages from the raw store, so a run can be
 re-interpreted without any model.
+
+Both return the counts they observed; assembling those into the run record that
+documents the run is :mod:`lookout.runrecord`'s job.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -56,7 +58,6 @@ LAYOUT = "layout.jsonl"
 GAZE_SCREEN = "gaze_screen.jsonl"
 ATTRIBUTION = "attribution.jsonl"
 EVENTS = "events.jsonl"
-RUN = "run.json"
 
 
 @dataclass(frozen=True)
@@ -176,7 +177,6 @@ def analyze(
             "directions": len(directions),
         }
     )
-    _write_run_metadata(out, config, summary)
     return summary
 
 
@@ -277,26 +277,3 @@ def attribute(
         "off_screen": off_screen,
         "events": len(all_events),
     }
-
-
-def _write_run_metadata(
-    out: Path,
-    config: AnalysisConfig,
-    summary: dict[str, object],
-) -> None:
-    from . import __version__
-
-    metadata = {
-        "schema": "lookout.run",
-        "version": 1,
-        "lookout_version": __version__,
-        "config": {
-            "target_fps": config.target_fps,
-            "dispersion_threshold": config.dispersion_threshold,
-            "min_fixation": config.min_fixation,
-            "max_gap": config.max_gap,
-            "event_min_duration": config.event_min_duration,
-        },
-        "summary": summary,
-    }
-    (out / RUN).write_text(json.dumps(metadata, indent=2), encoding="utf-8")

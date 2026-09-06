@@ -1,27 +1,23 @@
 """Report export.
 
-Turns aggregated events into shareable, offline artifacts: a JSON summary, a CSV
-of events, and a static HTML timeline (no server). Wording is deliberately
-constrained to estimates with confidence; the report never describes attention,
-interest, intent, or emotion.
+Turns aggregated events into shareable, offline artifacts: a CSV of events and a
+static HTML timeline (no server). The machine-readable report is the run record
+(:mod:`lookout.runrecord`), which carries the provenance and configuration these
+event tables cannot. Wording is deliberately constrained to estimates with
+confidence; the report never describes attention, interest, intent, or emotion.
 """
 
 from __future__ import annotations
 
 import csv
 import html
-import json
 from collections import defaultdict
 from pathlib import Path
 
 from .models import GazeEvent
+from .runrecord import DISCLAIMER
 
-__all__ = ["DISCLAIMER", "summarize", "write_json", "write_csv", "write_html"]
-
-DISCLAIMER = (
-    "These are gaze-direction estimates with confidence, derived from video. "
-    "They are not measurements of attention, interest, intent, or emotion."
-)
+__all__ = ["DISCLAIMER", "summarize", "write_csv", "write_html"]
 
 
 def summarize(events: list[GazeEvent]) -> dict[str, object]:
@@ -39,11 +35,6 @@ def summarize(events: list[GazeEvent]) -> dict[str, object]:
         for viewer, targets in by_viewer.items()
     }
     return {"viewers": viewers, "total_events": len(events)}
-
-
-def write_json(path: str | Path, events: list[GazeEvent]) -> None:
-    payload = {"disclaimer": DISCLAIMER, "summary": summarize(events)}
-    Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def write_csv(path: str | Path, events: list[GazeEvent]) -> None:
