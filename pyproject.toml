@@ -24,6 +24,7 @@ face = [
 appearance = [
   "torch>=2.2",
   "torchvision>=0.17",
+  "l2cs-net>=0.0.1",
 ]
 ocr = [
   "pytesseract>=0.3",
@@ -54,5 +55,17 @@ strict = true
 
 # Optional third-party model/vision libraries ship without type stubs.
 [[tool.mypy.overrides]]
-module = ["cv2", "cv2.*", "mediapipe", "mediapipe.*", "torch", "torch.*", "torchvision", "torchvision.*", "pytesseract"]
+module = [
+  "cv2",
+  "cv2.*",
+  "mediapipe",
+  "mediapipe.*",
+  "torch",
+  "torch.*",
+  "torchvision",
+  "torchvision.*",
+  "pytesseract",
+  "l2cs",
+  "l2cs.*",
+]
 ignore_missing_imports = true
