@@ -23,6 +23,8 @@ from .models import (
 )
 
 __all__ = [
+    "region_to_dict",
+    "region_from_dict",
     "write_layouts",
     "read_layouts",
     "write_points",
@@ -43,7 +45,7 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def _region_to_dict(region: Region) -> dict[str, object]:
+def region_to_dict(region: Region) -> dict[str, object]:
     return {
         "kind": region.kind.value,
         "x": region.x,
@@ -54,7 +56,7 @@ def _region_to_dict(region: Region) -> dict[str, object]:
     }
 
 
-def _region_from_dict(data: dict[str, object]) -> Region:
+def region_from_dict(data: dict[str, object]) -> Region:
     pid = data["participant_id"]
     return Region(
         kind=RegionKind(str(data["kind"])),
@@ -75,7 +77,7 @@ def write_layouts(path: str | Path, layouts: Iterable[Layout]) -> None:
                 "source": layout.source.value,
                 "start_time": layout.start_time,
                 "end_time": layout.end_time,
-                "regions": [_region_to_dict(r) for r in layout.regions],
+                "regions": [region_to_dict(r) for r in layout.regions],
             }
             for layout in layouts
         ),
@@ -87,7 +89,7 @@ def read_layouts(path: str | Path) -> list[Layout]:
     for row in _read_jsonl(path):
         regions_raw = row["regions"]
         assert isinstance(regions_raw, list)
-        regions = tuple(_region_from_dict(r) for r in regions_raw)
+        regions = tuple(region_from_dict(r) for r in regions_raw)
         end = row["end_time"]
         layouts.append(
             Layout(
