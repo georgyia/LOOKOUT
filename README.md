@@ -71,16 +71,17 @@ behind them lives in [experiments/](experiments).
 ## Roadmap
 
 - [x] Project skeleton and data contracts
-- [ ] Video/frame ingestion
-- [ ] Participant detection and tracking
-- [ ] Meeting-layout reconstruction
-- [ ] Raw gaze estimation
-- [ ] Gaze → screen-region attribution
-- [ ] Screen-region → participant attribution
-- [ ] Off-screen / second-screen / unknown handling
-- [ ] Temporal smoothing and gaze events
-- [ ] Audio speaker diarization
-- [ ] Interactive timeline/report
+- [x] Video/frame ingestion
+- [x] Participant detection and tracking
+- [x] Meeting-layout reconstruction
+- [x] Raw gaze estimation
+- [x] Gaze → screen-region attribution
+- [x] Screen-region → participant attribution
+- [x] Off-screen / unknown handling
+- [x] Temporal smoothing and gaze events
+- [x] Interactive timeline/report
+- [ ] Speaker context and audio diarization
+- [ ] Per-viewer layouts (manifest / inferred)
 - [ ] Performance optimization
 - [ ] Live meeting input experiments
 
