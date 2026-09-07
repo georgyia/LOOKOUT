@@ -8,13 +8,35 @@ version = "0.1.0"
 description = "Local-first meeting gaze analysis."
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
+dependencies = [
+  "numpy>=1.26",
+]
 
 [project.optional-dependencies]
+# Deterministic image/video processing used by the core pipeline.
+cv = [
+  "opencv-python>=4.9",
+]
+# Optional model adapters. Each is lazily imported; the core never depends on them.
+face = [
+  "mediapipe>=0.10",
+]
+appearance = [
+  "torch>=2.2",
+  "torchvision>=0.17",
+]
+ocr = [
+  "pytesseract>=0.3",
+]
 dev = [
   "pytest>=8",
   "ruff>=0.6",
   "mypy>=1.11",
+  "opencv-python>=4.9",
 ]
+
+[project.scripts]
+lookout = "lookout.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -23,9 +45,14 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
 
-[project.scripts]
-lookout = "lookout.cli:main"
+# Optional third-party model/vision libraries ship without type stubs.
+[[tool.mypy.overrides]]
+module = ["cv2", "cv2.*", "mediapipe", "mediapipe.*", "torch", "torch.*", "torchvision", "torchvision.*", "pytesseract"]
+ignore_missing_imports = true
