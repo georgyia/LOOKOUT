@@ -6,50 +6,58 @@
 - [x] Core gaze/layout data contracts
 - [x] Basic attribution
 - [x] Tests
-- [ ] Issue/PR automation
+- [x] Issue/PR/CI automation
 
 ## Phase 1 — video
 
-- [ ] Video decoding
-- [ ] Frame sampling
-- [ ] Timestamp management
-- [ ] Participant detection
-- [ ] Persistent tracking
+- [x] Video decoding
+- [x] Frame sampling
+- [x] Timestamp management
+- [x] Participant (tile) detection
+- [x] Slot persistence and optional name linking
 
 ## Phase 2 — layout
 
-- [ ] Meeting UI region detection
-- [ ] Participant-to-region assignments
-- [ ] Layout transitions
+- [x] Meeting UI region detection
+- [x] Participant-to-region assignments
+- [x] Layout transitions
 - [ ] Hidden/not-visible participants
 
 ## Phase 3 — gaze
 
-- [ ] Head pose
-- [ ] Eye gaze
-- [ ] Combined gaze estimate
-- [ ] Confidence calibration
-- [ ] Raw gaze stream
+- [x] Head pose
+- [x] Eye gaze (geometric baseline)
+- [x] Appearance estimator adapter
+- [x] Confidence calibration (geometry-based)
+- [x] Raw gaze stream (store)
 
 ## Phase 4 — attribution
 
-- [ ] Gaze-to-region intersection
-- [ ] Temporal smoothing
-- [ ] Unknown/off-screen classification
-- [ ] Participant attribution
-- [ ] Interaction events
+- [x] Gaze-to-region intersection with margin confidence
+- [x] Temporal smoothing and fixations
+- [x] Unknown/off-screen classification
+- [x] Participant attribution
+- [x] Interaction events
 
 ## Phase 5 — analysis
 
 - [ ] Speaking context
-- [ ] Gaze timelines
+- [x] Gaze timelines
 - [ ] Interaction graph
-- [ ] JSON/CSV export
-- [ ] Interactive report
+- [x] JSON/CSV export
+- [x] Interactive (static HTML) report
+- [x] Evaluation harness
 
-## Phase 6 — optimization
+## Phase 6 — research extensions
 
-- [ ] GPU acceleration
+- [ ] Implicit per-viewer calibration
+- [ ] Per-viewer layouts (manifest / inferred)
+- [ ] Speaker diarization
+- [ ] Opt-in face re-identification
+
+## Phase 7 — optimization
+
+- [ ] GPU/MPS acceleration
 - [ ] Batch processing
 - [ ] Model caching
 - [ ] Benchmarks
