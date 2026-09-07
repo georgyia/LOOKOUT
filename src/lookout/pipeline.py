@@ -193,14 +193,35 @@ def _assumed_layouts(viewer: str, recording_layouts: list[Layout]) -> list[Layou
     ]
 
 
-def attribute(out_dir: str | Path, config: AnalysisConfig | None = None) -> dict[str, object]:
-    """Re-run mapping, attribution, and events from the stored raw gaze."""
+def attribute(
+    out_dir: str | Path,
+    config: AnalysisConfig | None = None,
+    viewer_layouts: list[Layout] | None = None,
+) -> dict[str, object]:
+    """Re-run mapping, attribution, and events from the stored raw gaze.
+
+    ``viewer_layouts`` optionally supplies per-viewer layouts (e.g. from a
+    manifest, ``source=manifest``); without it, each viewer's layout is the
+    recording layout applied as ``assumed_shared``.
+    """
 
     config = config or AnalysisConfig()
     out = Path(out_dir)
 
     directions = store.read_gaze(out / GAZE_RAW)
-    recording_layouts = artifacts.read_layouts(out / LAYOUT)
+
+    layouts_by_viewer: dict[str, list[Layout]] = {}
+    if viewer_layouts is not None:
+        for layout in viewer_layouts:
+            layouts_by_viewer.setdefault(layout.viewer_id, []).append(layout)
+        recording_layouts = None
+    else:
+        recording_layouts = artifacts.read_layouts(out / LAYOUT)
+
+    def layouts_for(viewer: str) -> list[Layout]:
+        if recording_layouts is not None:
+            return _assumed_layouts(viewer, recording_layouts)
+        return layouts_by_viewer.get(viewer, [])
 
     by_person: dict[str, list[GazeDirection]] = {}
     for direction in directions:
@@ -212,7 +233,7 @@ def attribute(out_dir: str | Path, config: AnalysisConfig | None = None) -> dict
     off_screen = 0
 
     for viewer, person_directions in sorted(by_person.items()):
-        viewer_layouts = _assumed_layouts(viewer, recording_layouts)
+        active_layouts = layouts_for(viewer)
         points: list[GazePoint] = []
         for direction in sorted(person_directions, key=lambda d: d.timestamp):
             result = map_direction(direction, config.mapping)
@@ -232,13 +253,13 @@ def attribute(out_dir: str | Path, config: AnalysisConfig | None = None) -> dict
 
         timed: list[tuple[float, float, Attribution]] = []
         for fixation in fixations:
-            layout = _active(viewer_layouts, fixation.start_time)
-            if layout is None:
+            current_layout = _active(active_layouts, fixation.start_time)
+            if current_layout is None:
                 continue
             centroid = GazePoint(
                 fixation.start_time, viewer, fixation.x, fixation.y, fixation.confidence
             )
-            attribution = attribute_point(centroid, layout, config.attribution)
+            attribution = attribute_point(centroid, current_layout, config.attribution)
             timed.append((fixation.start_time, fixation.end_time, attribution))
             all_rows.append((viewer, fixation.start_time, fixation.end_time, attribution))
 
