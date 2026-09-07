@@ -40,3 +40,7 @@ numbers over paragraphs.
 - `05-appearance-gaze.md` — appearance model vs baseline (#8)
 - `06-screen-mapping.md` — angle-to-screen prior (#10)
 - `07-eval-protocol.md` — ground-truth protocol (#15)
+- `08-speaker-cues.md` — speaker context from visual cues (#17)
+- `09-calibration.md` — implicit per-viewer calibration (#18)
+- `10-per-viewer-layouts.md` — manifest and inferred layouts (#19)
+- `11-reidentification-privacy.md` — re-identification privacy review (#20)
