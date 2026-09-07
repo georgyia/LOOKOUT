@@ -37,7 +37,6 @@ __all__ = [
     "Layout",
     "Attribution",
     "GazeEvent",
-    "ScreenRegion",
 ]
 
 
@@ -271,28 +270,3 @@ class GazeEvent:
     @property
     def duration(self) -> float:
         return self.end_time - self.start_time
-
-
-@dataclass(frozen=True)
-class ScreenRegion:
-    """Transitional single-screen region, superseded by :class:`Layout` +
-    :class:`Region`.
-
-    Retained so the first attribution prototype keeps working; removed when
-    attribution is migrated to viewer-relative layouts.
-    """
-
-    participant_id: str
-    x: float
-    y: float
-    width: float
-    height: float
-    start_time: float
-    end_time: float | None = None
-
-    def contains(self, x: float, y: float, timestamp: float) -> bool:
-        if timestamp < self.start_time:
-            return False
-        if self.end_time is not None and timestamp >= self.end_time:
-            return False
-        return self.x <= x <= self.x + self.width and self.y <= y <= self.y + self.height
