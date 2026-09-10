@@ -5,17 +5,21 @@ pipeline class and no hidden state. ``analyze`` runs observation (video ->
 layouts -> raw gaze) and then attribution; ``attribute`` re-runs only the
 mapping/attribution/event stages from the raw store, so a run can be
 re-interpreted without any model.
+
+Both return the :class:`~lookout.coverage.Coverage` they achieved rather than a
+loose summary dict; assembling that into the run record that documents the run
+is :mod:`lookout.runrecord`'s job.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import artifacts, store
 from .attribution import AttributionParams, attribute_point
+from .coverage import Coverage, ParticipantCoverage
 from .events import aggregate_events
 from .face import FaceObserver
 from .frames import Image, read_video
@@ -56,7 +60,6 @@ LAYOUT = "layout.jsonl"
 GAZE_SCREEN = "gaze_screen.jsonl"
 ATTRIBUTION = "attribution.jsonl"
 EVENTS = "events.jsonl"
-RUN = "run.json"
 
 
 @dataclass(frozen=True)
@@ -134,7 +137,7 @@ def analyze(
     out_dir: str | Path,
     gaze_stage: GazeStage,
     config: AnalysisConfig | None = None,
-) -> dict[str, object]:
+) -> Coverage:
     """Run observation and attribution end to end, writing artifacts to ``out_dir``."""
 
     config = config or AnalysisConfig()
@@ -154,6 +157,17 @@ def analyze(
     )
 
     directions: list[GazeDirection] = []
+    # (attempts, hits) per participant: a tile the observer never resolved a
+    # face in yields no directions at all, so misses have to be counted here or
+    # they leave no trace anywhere downstream.
+    faces: dict[str, tuple[int, int]] = {}
+    participants: set[str] = set()
+
+    for recorded in recording_layouts:
+        for region in recorded.participant_regions():
+            assert region.participant_id is not None
+            participants.add(region.participant_id)
+
     for frame in frames:
         layout = _active(recording_layouts, frame.timestamp)
         if layout is None:
@@ -162,22 +176,21 @@ def analyze(
             assert region.participant_id is not None
             crop = _crop_region(frame.image, region)
             observation = gaze_stage(crop, region.participant_id, frame.timestamp)
+            attempts, hits = faces.get(region.participant_id, (0, 0))
+            faces[region.participant_id] = (attempts + 1, hits + (observation is not None))
             if observation is not None:
                 directions.append(observation)
 
     store.write_gaze(out / GAZE_RAW, directions)
     artifacts.write_layouts(out / LAYOUT, recording_layouts)
 
-    summary = attribute(out, config)
-    summary.update(
-        {
-            "frames": len(frames),
-            "layouts": len(recording_layouts),
-            "directions": len(directions),
-        }
+    return attribute(out, config).with_observation(
+        frames=len(frames),
+        layouts=len(recording_layouts),
+        layout_changes=max(0, len(recording_layouts) - 1),
+        participants_detected=len(participants),
+        faces_per_participant=faces,
     )
-    _write_run_metadata(out, config, summary)
-    return summary
 
 
 def _assumed_layouts(viewer: str, recording_layouts: list[Layout]) -> list[Layout]:
@@ -197,7 +210,7 @@ def attribute(
     out_dir: str | Path,
     config: AnalysisConfig | None = None,
     viewer_layouts: list[Layout] | None = None,
-) -> dict[str, object]:
+) -> Coverage:
     """Re-run mapping, attribution, and events from the stored raw gaze.
 
     ``viewer_layouts`` optionally supplies per-viewer layouts (e.g. from a
@@ -230,11 +243,14 @@ def attribute(
     all_points: list[GazePoint] = []
     all_rows: list[tuple[str, float, float, Attribution]] = []
     all_events: list[GazeEvent] = []
-    off_screen = 0
+    per_participant: list[ParticipantCoverage] = []
+    sources: set[str] = set()
 
     for viewer, person_directions in sorted(by_person.items()):
         active_layouts = layouts_for(viewer)
+        sources.update(layout.source.value for layout in active_layouts)
         points: list[GazePoint] = []
+        off_screen = 0
         for direction in sorted(person_directions, key=lambda d: d.timestamp):
             result = map_direction(direction, config.mapping)
             if isinstance(result, GazeTarget):
@@ -263,40 +279,32 @@ def attribute(
             timed.append((fixation.start_time, fixation.end_time, attribution))
             all_rows.append((viewer, fixation.start_time, fixation.end_time, attribution))
 
-        all_events.extend(
-            aggregate_events(viewer, timed, config.event_min_duration, config.max_gap)
+        events = aggregate_events(viewer, timed, config.event_min_duration, config.max_gap)
+        all_events.extend(events)
+
+        per_participant.append(
+            ParticipantCoverage(
+                participant_id=viewer,
+                directions=len(person_directions),
+                points=len(points),
+                off_screen=off_screen,
+                fixations=len(fixations),
+                attributions=len(timed),
+                events=len(events),
+            )
         )
 
     artifacts.write_points(out / GAZE_SCREEN, all_points)
     artifacts.write_attributions(out / ATTRIBUTION, all_rows)
     artifacts.write_events(out / EVENTS, all_events)
 
-    return {
-        "viewers": len(by_person),
-        "points": len(all_points),
-        "off_screen": off_screen,
-        "events": len(all_events),
-    }
-
-
-def _write_run_metadata(
-    out: Path,
-    config: AnalysisConfig,
-    summary: dict[str, object],
-) -> None:
-    from . import __version__
-
-    metadata = {
-        "schema": "lookout.run",
-        "version": 1,
-        "lookout_version": __version__,
-        "config": {
-            "target_fps": config.target_fps,
-            "dispersion_threshold": config.dispersion_threshold,
-            "min_fixation": config.min_fixation,
-            "max_gap": config.max_gap,
-            "event_min_duration": config.event_min_duration,
-        },
-        "summary": summary,
-    }
-    (out / RUN).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    return Coverage(
+        directions=len(directions),
+        points=len(all_points),
+        off_screen=sum(entry.off_screen for entry in per_participant),
+        fixations=sum(entry.fixations for entry in per_participant),
+        attributions=len(all_rows),
+        events=len(all_events),
+        layout_sources=tuple(sorted(sources)),
+        per_participant=tuple(per_participant),
+    )

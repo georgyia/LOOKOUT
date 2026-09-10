@@ -1,16 +1,22 @@
 """Command-line interface: analyze, attribute, evaluate.
 
-Wires real adapters to the injectable pipeline functions. Everything runs
-offline; model files and weights are provided by the user.
+Wires real adapters to the injectable pipeline functions, and records which
+adapters ran so a report can be judged. Everything runs offline; model files and
+weights are provided by the user.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
+from typing import Any
 
-from . import artifacts, report
+from . import artifacts, report, runrecord
+from .coverage import Coverage, detect_degradations
 from .evaluate import evaluate, load_truth
 from .pipeline import (
     EVENTS,
@@ -20,38 +26,128 @@ from .pipeline import (
     attribute,
     geometric_stage,
 )
+from .runrecord import AdapterInfo, RunRecord
+
+REPORT = "report.json"
 
 
-def _write_reports(out: Path) -> None:
+def _library_version(name: str) -> str | None:
+    try:
+        return package_version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def _adapter(role: str, implementation: str, model: str | None, library: str) -> AdapterInfo:
+    return AdapterInfo(
+        role=role,
+        implementation=implementation,
+        model_path=model,
+        model_sha256=runrecord.file_digest(model) if model else None,
+        library_version=_library_version(library),
+    )
+
+
+def _write_reports(
+    out: Path,
+    config: AnalysisConfig,
+    coverage: Coverage,
+    *,
+    video: str | None = None,
+    adapters: tuple[AdapterInfo, ...] = (),
+    provenance_from: RunRecord | None = None,
+) -> RunRecord:
+    """Write the run record and the rendered event tables.
+
+    ``provenance_from`` carries the recording and adapter identity of an earlier
+    run forward, so re-attributing a stored run does not lose the provenance of
+    observations no longer being recomputed.
+    """
+
     events = artifacts.read_events(out / EVENTS)
-    report.write_json(out / "report.json", events)
+    results: dict[str, Any] = dict(report.summarize(events))
+
+    if provenance_from is not None:
+        video = video or (
+            provenance_from.provenance.video.path if provenance_from.provenance.video else None
+        )
+        adapters = adapters or provenance_from.provenance.adapters
+
+    record = runrecord.build_record(
+        config,
+        results,
+        coverage=coverage,
+        degradations=detect_degradations(coverage),
+        video=video,
+        adapters=adapters,
+        command=sys.argv,
+    )
+    runrecord.write_record(out / REPORT, record)
     report.write_csv(out / "report.csv", events)
     report.write_html(out / "report.html", events)
+    return record
+
+
+def _read_existing(out: Path) -> RunRecord | None:
+    path = out / REPORT
+    if not path.exists():
+        return None
+    try:
+        return runrecord.read_record(path)
+    except (ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
+def _print_summary(record: RunRecord) -> None:
+    """Print the funnel and what the run had to settle for, not just the totals."""
+
+    print(
+        json.dumps(
+            {
+                "coverage": runrecord.coverage_to_dict(record.coverage)
+                if record.coverage
+                else None,
+                "degradations": [
+                    {"code": d.code, "detail": d.detail} for d in record.degradations
+                ],
+            },
+            indent=2,
+        )
+    )
 
 
 def _cmd_analyze(args: argparse.Namespace) -> None:
     from .face import MediaPipeFaceObserver
 
     observer = MediaPipeFaceObserver(args.model)
+    adapters = [_adapter("face", "MediaPipeFaceObserver", args.model, "mediapipe")]
+
     if args.gaze == "appearance":
         if not args.weights:
             raise SystemExit("--weights is required for --gaze appearance")
         from .gaze_appearance import L2CSGazeEstimator
 
         stage = appearance_stage(observer, L2CSGazeEstimator(args.weights))
+        adapters.append(_adapter("gaze", "L2CSGazeEstimator", args.weights, "torch"))
     else:
         stage = geometric_stage(observer)
+        adapters.append(_adapter("gaze", "geometric", None, "numpy"))
 
     config = AnalysisConfig(target_fps=args.fps)
-    summary = analyze(args.video, args.out, stage, config)
-    _write_reports(Path(args.out))
-    print(json.dumps(summary, indent=2))
+    coverage = analyze(args.video, args.out, stage, config)
+    record = _write_reports(
+        Path(args.out), config, coverage, video=args.video, adapters=tuple(adapters)
+    )
+    _print_summary(record)
 
 
 def _cmd_attribute(args: argparse.Namespace) -> None:
-    summary = attribute(args.out)
-    _write_reports(Path(args.out))
-    print(json.dumps(summary, indent=2))
+    out = Path(args.out)
+    existing = _read_existing(out)
+    config = AnalysisConfig()
+    coverage = attribute(out, config)
+    record = _write_reports(out, config, coverage, provenance_from=existing)
+    _print_summary(record)
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> None:
