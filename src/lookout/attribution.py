@@ -62,10 +62,11 @@ def attribute_point(
             confidence,
             f"near border: {target}",
             layout.source,
+            margin_ratio=margin_ratio,
         )
 
     reason = "self" if target == layout.viewer_id else "center hit"
-    return Attribution(target, confidence, reason, layout.source)
+    return Attribution(target, confidence, reason, layout.source, margin_ratio=margin_ratio)
 
 
 def attribute_target(

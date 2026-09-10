@@ -46,12 +46,15 @@
 - [ ] Interaction graph
 - [x] JSON/CSV export
 - [x] Interactive (static HTML) report
+- [x] Run record with provenance and coverage
+- [x] Degradation and distribution diagnostics
 - [x] Evaluation harness
+- [x] Baselines, calibration, and a synthetic ground-truth fixture
 
 ## Phase 6 — research extensions
 
-- [ ] Implicit per-viewer calibration
-- [ ] Per-viewer layouts (manifest / inferred)
+- [x] Implicit per-viewer calibration
+- [x] Per-viewer layouts (manifest)
 - [ ] Speaker diarization
 - [ ] Opt-in face re-identification
 

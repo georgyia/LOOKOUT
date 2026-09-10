@@ -73,3 +73,30 @@ is never invented; when evidence is insufficient the result is one of these.
 ## Future entities
 
 `ParticipantTrack`, `SpeakerSegment`, `Interaction`, `VisibilityState`.
+
+## Diagnostic fields
+
+Each of these was previously computed, thresholded on, and discarded. They exist
+so that a low confidence can be acted on rather than only noticed.
+
+- **GazeQuality** — the factors whose product is a `GazeDirection`'s confidence:
+  `detection`, `size`, `openness`, `head`. A small face, a blink and a head
+  turned away collapse to the same number while calling for different responses;
+  `limiting` names the one holding confidence down.
+- **Attribution.margin_ratio** — how centrally the point sat in its region. A
+  central hit from a poor observation and a near-border hit from a good one
+  produce similar confidences and are otherwise indistinguishable.
+- **Fixation.dispersion** — how tightly the points clustered.
+- **GazeEvent.reason** — carried up from the span accounting for most of the
+  event's duration. Without it a report knows an event was uncertain but not
+  whether the gaze missed every region, fell between two, or sat on a border.
+
+## Run observability
+
+- **Coverage** / **ParticipantCoverage** — the per-stage funnel, validated on
+  construction.
+- **Degradation** — what a run settled for, with its impact on the reader.
+- **Diagnostics** — the shape of a run's results.
+- **RunRecord** — the whole run as one serializable document.
+
+See [report.md](report.md).

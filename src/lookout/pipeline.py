@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import artifacts, store
 from .attribution import AttributionParams, attribute_point
+from .calibration import calibrate_mapping, weak_labels_from_speaker
 from .coverage import Coverage, ParticipantCoverage
 from .events import aggregate_events
 from .face import FaceObserver
@@ -38,10 +39,12 @@ from .models import (
     Region,
 )
 from .screen_mapping import ScreenMappingParams, map_direction
+from .speaker import SpeakerSegment, aggregate_speaker_segments, detect_highlighted_tile
 from .temporal import detect_fixations, median_smooth
 
 __all__ = [
     "AnalysisConfig",
+    "CalibrationReport",
     "GazeStage",
     "geometric_stage",
     "appearance_stage",
@@ -60,6 +63,7 @@ LAYOUT = "layout.jsonl"
 GAZE_SCREEN = "gaze_screen.jsonl"
 ATTRIBUTION = "attribution.jsonl"
 EVENTS = "events.jsonl"
+SPEAKER = "speaker.jsonl"
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,11 @@ class AnalysisConfig:
     min_fixation: float = 0.15
     max_gap: float = 0.3
     event_min_duration: float = 0.2
+    min_calibration_labels: int = 20
+    """Weak labels a viewer needs before its mapping is fit rather than assumed.
+
+    Too few and the fit tracks the noise in a handful of glances; the prior,
+    wrong as it is, is at least wrong consistently."""
 
 
 def geometric_stage(
@@ -116,6 +125,50 @@ def appearance_stage(
     return stage
 
 
+@dataclass(frozen=True)
+class CalibrationReport:
+    """Whether a viewer's mapping was fit or assumed, and why.
+
+    A calibrated run and an assumed one must not read alike, so this is carried
+    into the record rather than logged.
+    """
+
+    viewer_id: str
+    calibrated: bool
+    labels: int
+    reason: str
+
+
+def _calibrated_mapping(
+    viewer: str,
+    directions: list[GazeDirection],
+    segments: list[SpeakerSegment],
+    layout: Layout | None,
+    config: AnalysisConfig,
+) -> tuple[ScreenMappingParams, CalibrationReport]:
+    """Fit this viewer's angle-to-screen mapping, or keep the prior.
+
+    Falls back on every failure rather than producing a confident wrong mapping:
+    a degenerate fit is worse than a documented guess, because it looks fitted.
+    """
+
+    if layout is None:
+        return config.mapping, CalibrationReport(viewer, False, 0, "no layout")
+    if not segments:
+        return config.mapping, CalibrationReport(viewer, False, 0, "no speaker segments")
+
+    labels = weak_labels_from_speaker(directions, segments, layout)
+    if len(labels) < config.min_calibration_labels:
+        return config.mapping, CalibrationReport(
+            viewer, False, len(labels), "too few weak labels"
+        )
+    try:
+        fitted = calibrate_mapping(labels)
+    except ValueError as error:
+        return config.mapping, CalibrationReport(viewer, False, len(labels), str(error))
+    return fitted, CalibrationReport(viewer, True, len(labels), "fit from speaker cues")
+
+
 def _crop_region(image: Image, region: Region) -> Image:
     height, width = image.shape[:2]
     x0 = int(round(region.x * width))
@@ -137,7 +190,8 @@ def analyze(
     out_dir: str | Path,
     gaze_stage: GazeStage,
     config: AnalysisConfig | None = None,
-) -> Coverage:
+    viewer_layouts: list[Layout] | None = None,
+) -> tuple[Coverage, tuple[CalibrationReport, ...]]:
     """Run observation and attribution end to end, writing artifacts to ``out_dir``."""
 
     config = config or AnalysisConfig()
@@ -162,17 +216,31 @@ def analyze(
     # they leave no trace anywhere downstream.
     faces: dict[str, tuple[int, int]] = {}
     participants: set[str] = set()
+    # Speaker flags, collected here because only observation has the frames.
+    speaking: list[tuple[float, float, str, float]] = []
+    frame_step = 1.0 / config.target_fps
 
     for recorded in recording_layouts:
         for region in recorded.participant_regions():
             assert region.participant_id is not None
             participants.add(region.participant_id)
 
+    tiles_at = dict(per_frame_tiles)
     for frame in frames:
         layout = _active(recording_layouts, frame.timestamp)
         if layout is None:
             continue
-        for region in layout.participant_regions():
+
+        regions = layout.participant_regions()
+        highlighted = detect_highlighted_tile(frame.image, tiles_at.get(frame.timestamp, ()))
+        if highlighted is not None and highlighted < len(regions):
+            speaker_id = regions[highlighted].participant_id
+            if speaker_id is not None:
+                speaking.append(
+                    (frame.timestamp, frame.timestamp + frame_step, speaker_id, 1.0)
+                )
+
+        for region in regions:
             assert region.participant_id is not None
             crop = _crop_region(frame.image, region)
             observation = gaze_stage(crop, region.participant_id, frame.timestamp)
@@ -183,13 +251,21 @@ def analyze(
 
     store.write_gaze(out / GAZE_RAW, directions)
     artifacts.write_layouts(out / LAYOUT, recording_layouts)
+    artifacts.write_speaker_segments(
+        out / SPEAKER,
+        aggregate_speaker_segments(speaking, cue="highlight", max_gap=2.0 * frame_step),
+    )
 
-    return attribute(out, config).with_observation(
-        frames=len(frames),
-        layouts=len(recording_layouts),
-        layout_changes=max(0, len(recording_layouts) - 1),
-        participants_detected=len(participants),
-        faces_per_participant=faces,
+    coverage, calibrations = attribute(out, config, viewer_layouts)
+    return (
+        coverage.with_observation(
+            frames=len(frames),
+            layouts=len(recording_layouts),
+            layout_changes=max(0, len(recording_layouts) - 1),
+            participants_detected=len(participants),
+            faces_per_participant=faces,
+        ),
+        calibrations,
     )
 
 
@@ -210,18 +286,29 @@ def attribute(
     out_dir: str | Path,
     config: AnalysisConfig | None = None,
     viewer_layouts: list[Layout] | None = None,
-) -> Coverage:
+    calibrate: bool = False,
+) -> tuple[Coverage, tuple[CalibrationReport, ...]]:
     """Re-run mapping, attribution, and events from the stored raw gaze.
 
     ``viewer_layouts`` optionally supplies per-viewer layouts (e.g. from a
     manifest, ``source=manifest``); without it, each viewer's layout is the
     recording layout applied as ``assumed_shared``.
+
+    ``calibrate`` fits each viewer's angle-to-screen mapping from stored speaker
+    segments instead of using the shared prior. The prior encodes one laptop's
+    geometry; a viewer on a different screen has a systematically different
+    relationship, which is the error the pipeline tolerates least.
     """
 
     config = config or AnalysisConfig()
     out = Path(out_dir)
 
     directions = store.read_gaze(out / GAZE_RAW)
+    segments = (
+        artifacts.read_speaker_segments(out / SPEAKER)
+        if calibrate and (out / SPEAKER).exists()
+        else []
+    )
 
     layouts_by_viewer: dict[str, list[Layout]] = {}
     if viewer_layouts is not None:
@@ -245,14 +332,27 @@ def attribute(
     all_events: list[GazeEvent] = []
     per_participant: list[ParticipantCoverage] = []
     sources: set[str] = set()
+    calibrations: list[CalibrationReport] = []
 
     for viewer, person_directions in sorted(by_person.items()):
         active_layouts = layouts_for(viewer)
         sources.update(layout.source.value for layout in active_layouts)
+
+        mapping = config.mapping
+        if calibrate:
+            mapping, calibration = _calibrated_mapping(
+                viewer,
+                person_directions,
+                segments,
+                active_layouts[0] if active_layouts else None,
+                config,
+            )
+            calibrations.append(calibration)
+
         points: list[GazePoint] = []
         off_screen = 0
         for direction in sorted(person_directions, key=lambda d: d.timestamp):
-            result = map_direction(direction, config.mapping)
+            result = map_direction(direction, mapping)
             if isinstance(result, GazeTarget):
                 off_screen += 1
                 continue
@@ -298,7 +398,7 @@ def attribute(
     artifacts.write_attributions(out / ATTRIBUTION, all_rows)
     artifacts.write_events(out / EVENTS, all_events)
 
-    return Coverage(
+    coverage = Coverage(
         directions=len(directions),
         points=len(all_points),
         off_screen=sum(entry.off_screen for entry in per_participant),
@@ -308,3 +408,4 @@ def attribute(
         layout_sources=tuple(sorted(sources)),
         per_participant=tuple(per_participant),
     )
+    return coverage, tuple(calibrations)

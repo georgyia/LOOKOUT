@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .coverage import Coverage, Degradation, ParticipantCoverage
+from .diagnostics import Diagnostics
 from .pipeline import AnalysisConfig
 
 __all__ = [
@@ -120,6 +121,12 @@ class RunRecord:
     config: dict[str, Any]
     config_overrides: tuple[str, ...] = ()
     coverage: Coverage | None = None
+    diagnostics: Diagnostics | None = None
+    evaluation: dict[str, Any] | None = None
+    """Scores against ground truth, or ``None`` when the run was never scored.
+
+    The distinction is the report's headline: an unscored run and a scored one
+    must not read alike."""
     degradations: tuple[Degradation, ...] = ()
     results: dict[str, Any] = field(default_factory=dict)
     disclaimer: str = DISCLAIMER
@@ -266,6 +273,8 @@ def build_record(
     results: dict[str, Any],
     *,
     coverage: Coverage | None = None,
+    diagnostics: Diagnostics | None = None,
+    evaluation: dict[str, Any] | None = None,
     degradations: tuple[Degradation, ...] = (),
     video: str | Path | None = None,
     adapters: tuple[AdapterInfo, ...] = (),
@@ -286,6 +295,8 @@ def build_record(
         config=values,
         config_overrides=overrides,
         coverage=coverage,
+        diagnostics=diagnostics,
+        evaluation=evaluation,
         degradations=degradations,
         results=results,
     )
@@ -325,6 +336,17 @@ def _coverage_from_dict(data: dict[str, Any]) -> Coverage:
     )
 
 
+def _diagnostics_from_dict(data: dict[str, Any]) -> Diagnostics:
+    known = {f.name for f in fields(Diagnostics)}
+    payload = {key: value for key, value in data.items() if key in known}
+    for key in ("confidence_histogram",):
+        if key in payload:
+            payload[key] = tuple(payload[key])
+    if "screen_histogram" in payload:
+        payload["screen_histogram"] = tuple(tuple(row) for row in payload["screen_histogram"])
+    return Diagnostics(**payload)
+
+
 def to_dict(record: RunRecord) -> dict[str, Any]:
     return {
         "schema": _SCHEMA_NAME,
@@ -334,6 +356,8 @@ def to_dict(record: RunRecord) -> dict[str, Any]:
         "config": record.config,
         "config_overrides": list(record.config_overrides),
         "coverage": coverage_to_dict(record.coverage) if record.coverage else None,
+        "diagnostics": _plain(record.diagnostics) if record.diagnostics else None,
+        "evaluation": record.evaluation,
         "degradations": [asdict(d) for d in record.degradations],
         "results": record.results,
     }
@@ -354,11 +378,14 @@ def from_dict(data: dict[str, Any]) -> RunRecord:
         adapters=tuple(AdapterInfo(**a) for a in adapters),
     )
     coverage = data.get("coverage")
+    diagnostics = data.get("diagnostics")
     return RunRecord(
         provenance=provenance,
         config=data.get("config", {}),
         config_overrides=tuple(data.get("config_overrides", ())),
         coverage=_coverage_from_dict(coverage) if coverage else None,
+        diagnostics=_diagnostics_from_dict(diagnostics) if diagnostics else None,
+        evaluation=data.get("evaluation"),
         degradations=tuple(Degradation(**d) for d in data.get("degradations", ())),
         results=data.get("results", {}),
         disclaimer=str(data.get("disclaimer", DISCLAIMER)),

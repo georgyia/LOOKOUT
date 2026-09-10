@@ -63,9 +63,26 @@ counters could not represent at all: a tile in which no face was ever found
 produces no directions, and so appeared nowhere in the output; it now appears in
 coverage with a hit rate of zero.
 
-Applied to the 3-minute recording, the run's own coverage is enough to derive
-the shared-layout and low-hit-rate degradations that previously had to be
-written by hand.
+Applied to the 3-minute gallery recording, the generated report reaches unaided
+the conclusions that previously had to be written by hand:
+
+| Previously hand-written | Now |
+| --- | --- |
+| "Layout: equal 3x3 grid (mask detection fails on abutting tiles)" | declared by the caller as `forced_equal_grid` |
+| "Gaze: YuNet 5-point proxy" | declared as `landmark_proxy`, and recorded in the adapter provenance |
+| "Attribution uses assumed_shared layout" | derived: `assumed_shared_layout` |
+| "No cue-protocol ground truth: hit-rate cannot be computed" | the verdict: `Accuracy: NOT MEASURED` |
+| "Face detections (hit rate): 5510 / 6648 → 82.9%" | the coverage funnel |
+| "That is largely an artifact of the coarse YuNet gaze proxy: frontal faces map near screen CENTER" | derived: `centre_clustered_gaze`, 82.9% of points in the central ninth |
+| "about 79% of attributions point at slot_4" | derived: `concentrated_targets`, 92.8%, with entropy 0.12 |
+
+The two figures differ because the diagnostic excludes non-participant outcomes
+from the denominator: a run that is mostly `unknown` is empty, not concentrated.
+
+One participant appears in the report that appeared nowhere in the previous
+output. `slot_6` was examined in 183 crops and never resolved; with no
+directions it left no trace, and the earlier summary simply listed eight
+participants instead of nine.
 
 ## Risks
 

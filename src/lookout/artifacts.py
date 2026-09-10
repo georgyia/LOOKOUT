@@ -21,6 +21,7 @@ from .models import (
     Region,
     RegionKind,
 )
+from .speaker import SpeakerSegment
 
 __all__ = [
     "region_to_dict",
@@ -28,9 +29,12 @@ __all__ = [
     "write_layouts",
     "read_layouts",
     "write_points",
+    "read_points",
     "write_attributions",
     "write_events",
     "read_events",
+    "write_speaker_segments",
+    "read_speaker_segments",
 ]
 
 
@@ -119,6 +123,19 @@ def write_points(path: str | Path, points: Iterable[GazePoint]) -> None:
     )
 
 
+def read_points(path: str | Path) -> list[GazePoint]:
+    return [
+        GazePoint(
+            timestamp=float(row["timestamp"]),  # type: ignore[arg-type]
+            person_id=str(row["person_id"]),
+            x=float(row["x"]),  # type: ignore[arg-type]
+            y=float(row["y"]),  # type: ignore[arg-type]
+            confidence=float(row["confidence"]),  # type: ignore[arg-type]
+        )
+        for row in _read_jsonl(path)
+    ]
+
+
 def write_attributions(
     path: str | Path,
     rows: Iterable[tuple[str, float, float, Attribution]],
@@ -133,6 +150,7 @@ def write_attributions(
                 "target": attr.target,
                 "confidence": attr.confidence,
                 "reason": attr.reason,
+                "margin_ratio": attr.margin_ratio,
                 "layout_source": attr.layout_source.value,
             }
             for viewer_id, start, end, attr in rows
@@ -151,10 +169,47 @@ def write_events(path: str | Path, events: Iterable[GazeEvent]) -> None:
                 "end_time": e.end_time,
                 "confidence": e.confidence,
                 "layout_source": e.layout_source.value,
+                "reason": e.reason,
             }
             for e in events
         ),
     )
+
+
+def write_speaker_segments(path: str | Path, segments: Iterable[SpeakerSegment]) -> None:
+    """Persist speaker segments.
+
+    Speaker context is an observation: deriving it needs the frames, and
+    attribution has neither video nor model. Writing it here is what lets a
+    stored run be re-interpreted with calibration later.
+    """
+
+    _write_jsonl(
+        path,
+        (
+            {
+                "participant_id": s.participant_id,
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "confidence": s.confidence,
+                "cue": s.cue,
+            }
+            for s in segments
+        ),
+    )
+
+
+def read_speaker_segments(path: str | Path) -> list[SpeakerSegment]:
+    return [
+        SpeakerSegment(
+            participant_id=str(row["participant_id"]),
+            start_time=float(row["start_time"]),  # type: ignore[arg-type]
+            end_time=float(row["end_time"]),  # type: ignore[arg-type]
+            confidence=float(row["confidence"]),  # type: ignore[arg-type]
+            cue=str(row["cue"]),
+        )
+        for row in _read_jsonl(path)
+    ]
 
 
 def read_events(path: str | Path) -> list[GazeEvent]:
@@ -166,6 +221,7 @@ def read_events(path: str | Path) -> list[GazeEvent]:
             end_time=float(row["end_time"]),  # type: ignore[arg-type]
             confidence=float(row["confidence"]),  # type: ignore[arg-type]
             layout_source=LayoutSource(str(row["layout_source"])),
+            reason=str(row.get("reason", "")),
         )
         for row in _read_jsonl(path)
     ]

@@ -4,6 +4,10 @@ Aggregates a viewer's time-ordered attributions into :class:`GazeEvent`s: runs
 of the same target are merged (across gaps up to ``max_gap``), confidence is the
 duration-weighted mean, and runs shorter than ``min_duration`` are dropped so a
 momentary glance does not become an event.
+
+The attribution's reason is carried up with the target rather than discarded at
+this boundary: an event known only by a confidence number cannot tell a reader
+whether the gaze missed every region, fell between two, or sat on a border.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ class _OpenEvent:
         self.end = end
         self._weight = 0.0
         self._weighted_confidence = 0.0
+        self._reason_weight: dict[str, float] = {}
         self.add(start, end, attribution)
 
     def add(self, start: float, end: float, attribution: Attribution) -> None:
@@ -33,10 +38,19 @@ class _OpenEvent:
         self.end = max(self.end, end)
         self._weight += weight
         self._weighted_confidence += weight * attribution.confidence
+        self._reason_weight[attribution.reason] = (
+            self._reason_weight.get(attribution.reason, 0.0) + weight
+        )
 
     @property
     def confidence(self) -> float:
         return self._weighted_confidence / self._weight
+
+    @property
+    def reason(self) -> str:
+        """The reason that accounts for most of the event's duration."""
+
+        return max(self._reason_weight, key=lambda name: self._reason_weight[name])
 
     def to_event(self, viewer_id: str) -> GazeEvent:
         return GazeEvent(
@@ -46,6 +60,7 @@ class _OpenEvent:
             end_time=self.end,
             confidence=self.confidence,
             layout_source=self.layout_source,
+            reason=self.reason,
         )
 
 
