@@ -9,9 +9,9 @@ SOURCE = LayoutSource.ASSUMED_SHARED
 
 def _events() -> list[GazeEvent]:
     return [
-        GazeEvent("bob", "alice", 0.0, 2.0, 0.9, SOURCE),
-        GazeEvent("bob", "carol", 2.0, 2.5, 0.6, SOURCE),
-        GazeEvent("alice", "bob", 0.0, 1.0, 0.8, SOURCE),
+        GazeEvent("bob", "alice", 0.0, 2.0, 0.9, SOURCE, reason="center hit"),
+        GazeEvent("bob", "carol", 2.0, 2.5, 0.6, SOURCE, reason="near border: carol"),
+        GazeEvent("alice", "bob", 0.0, 1.0, 0.8, SOURCE, reason="center hit"),
     ]
 
 
@@ -27,10 +27,19 @@ def test_write_csv_has_header_and_rows(tmp_path: Path) -> None:
     path = tmp_path / "report.csv"
     write_csv(path, _events())
     rows = list(csv.reader(path.read_text(encoding="utf-8").splitlines()))
-    header = ["viewer_id", "target", "start_time", "end_time", "confidence", "layout_source"]
+    header = [
+        "viewer_id",
+        "target",
+        "start_time",
+        "end_time",
+        "confidence",
+        "layout_source",
+        "reason",
+    ]
     assert rows[0] == header
     assert len(rows) == 4  # header + 3 events
     assert rows[1][0] == "alice"  # sorted by viewer then start
+    assert rows[2][6] == "center hit"  # the reason survives to the event table
 
 
 def test_write_html_is_static_and_carries_disclaimer(tmp_path: Path) -> None:

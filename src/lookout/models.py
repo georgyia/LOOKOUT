@@ -32,6 +32,7 @@ __all__ = [
     "LayoutSource",
     "GazePoint",
     "HeadPose",
+    "GazeQuality",
     "GazeDirection",
     "Region",
     "Layout",
@@ -121,6 +122,44 @@ class HeadPose:
 
 
 @dataclass(frozen=True)
+class GazeQuality:
+    """Why a gaze observation earned the confidence it did.
+
+    Confidence is the product of these factors, and the product alone cannot be
+    read: a small face, a blink, and a head turned away all yield the same low
+    number while calling for entirely different responses. Keeping the factors
+    separate is what makes a low-confidence run diagnosable.
+    """
+
+    detection: float
+    size: float
+    openness: float
+    head: float
+
+    def __post_init__(self) -> None:
+        _check_unit(self.detection, "detection factor")
+        _check_unit(self.size, "size factor")
+        _check_unit(self.openness, "openness factor")
+        _check_unit(self.head, "head factor")
+
+    @property
+    def combined(self) -> float:
+        return self.detection * self.size * self.openness * self.head
+
+    @property
+    def limiting(self) -> str:
+        """The factor holding confidence down — the one worth acting on."""
+
+        factors = {
+            "detection": self.detection,
+            "size": self.size,
+            "openness": self.openness,
+            "head": self.head,
+        }
+        return min(factors, key=lambda name: factors[name])
+
+
+@dataclass(frozen=True)
 class GazeDirection:
     """A raw gaze observation: an angle in the camera frame with confidence.
 
@@ -135,6 +174,7 @@ class GazeDirection:
     pitch: float
     head_pose: HeadPose
     confidence: float
+    quality: GazeQuality | None = None
 
     def __post_init__(self) -> None:
         _check_finite(self.yaw, "yaw")
@@ -242,9 +282,19 @@ class Attribution:
     confidence: float
     reason: str
     layout_source: LayoutSource
+    margin_ratio: float | None = None
+    """How centrally the point sat in its region, in [0, 1].
+
+    Confidence multiplies this by the point's own confidence, so the two are
+    indistinguishable afterwards: a central hit from a poor observation and a
+    near-border hit from a good one score alike. ``None`` when no region was
+    involved.
+    """
 
     def __post_init__(self) -> None:
         _check_unit(self.confidence, "confidence")
+        if self.margin_ratio is not None:
+            _check_unit(self.margin_ratio, "margin_ratio")
         if not self.target:
             raise ValueError("target must be non-empty")
 
@@ -259,6 +309,10 @@ class GazeEvent:
     end_time: float
     confidence: float
     layout_source: LayoutSource
+    reason: str = ""
+    """Why the attribution landed here, carried up from the longest span merged
+    into this event. Without it the report knows an event was uncertain but not
+    whether the gaze missed every region, fell between two, or sat on a border."""
 
     def __post_init__(self) -> None:
         if self.start_time < 0:

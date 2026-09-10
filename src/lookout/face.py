@@ -133,6 +133,15 @@ class MediaPipeFaceObserver:
         points = result.face_landmarks[0]
         landmarks = np.array([[p.x, p.y, p.z] for p in points], dtype=np.float32)
 
+        # The detector's own score when it exposes one. Reporting a constant 1.0
+        # made every observation look equally well founded.
+        scores = [
+            float(detection.score)
+            for detection in getattr(result, "face_detections", None) or []
+            if getattr(detection, "score", None) is not None
+        ]
+        detection_confidence = max(scores) if scores else 1.0
+
         if result.facial_transformation_matrixes:
             head_pose = head_pose_from_matrix(result.facial_transformation_matrixes[0])
         else:
@@ -144,7 +153,9 @@ class MediaPipeFaceObserver:
                 if category.category_name.startswith("eyeLook"):
                     blendshapes[category.category_name] = float(category.score)
 
-        return FaceObservation(landmarks, head_pose, blendshapes, detection_confidence=1.0)
+        return FaceObservation(
+            landmarks, head_pose, blendshapes, detection_confidence=detection_confidence
+        )
 
     def close(self) -> None:
         self._landmarker.close()

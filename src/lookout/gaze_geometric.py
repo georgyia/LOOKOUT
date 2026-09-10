@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .face import LEFT_EYE, LEFT_IRIS, RIGHT_EYE, RIGHT_IRIS, FaceObservation, iris_center
-from .models import GazeDirection
+from .models import GazeDirection, GazeQuality
 
 __all__ = ["GeometricGazeParams", "eye_offsets", "estimate_gaze"]
 
@@ -85,11 +85,13 @@ def eye_offsets(observation: FaceObservation) -> tuple[float, float, float]:
     )
 
 
-def _confidence(
+def _quality(
     observation: FaceObservation,
     openness: float,
     params: GeometricGazeParams,
-) -> float:
+) -> GazeQuality:
+    """Decompose confidence into the factors that produced it."""
+
     right = np.array(observation.right_iris)
     left = np.array(observation.left_iris)
     iod = float(np.linalg.norm(right - left))
@@ -101,8 +103,11 @@ def _confidence(
     extremity = max(abs(observation.head_pose.yaw), abs(observation.head_pose.pitch))
     head_factor = _clamp(1.0 - extremity / (math.pi / 2.0), 0.0, 1.0)
 
-    return _clamp(
-        observation.detection_confidence * size_factor * open_factor * head_factor, 0.0, 1.0
+    return GazeQuality(
+        detection=_clamp(observation.detection_confidence, 0.0, 1.0),
+        size=size_factor,
+        openness=open_factor,
+        head=head_factor,
     )
 
 
@@ -123,5 +128,7 @@ def estimate_gaze(
     yaw = observation.head_pose.yaw + eye_yaw
     pitch = observation.head_pose.pitch + eye_pitch
 
-    confidence = _confidence(observation, openness, params)
-    return GazeDirection(timestamp, person_id, yaw, pitch, observation.head_pose, confidence)
+    quality = _quality(observation, openness, params)
+    return GazeDirection(
+        timestamp, person_id, yaw, pitch, observation.head_pose, quality.combined, quality
+    )

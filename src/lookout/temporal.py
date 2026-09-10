@@ -29,6 +29,9 @@ class Fixation:
     start_time: float
     end_time: float
     confidence: float
+    dispersion: float = 0.0
+    """How tightly the points clustered. A fixation that only just passed the
+    threshold and one that was rock steady are otherwise indistinguishable."""
 
     @property
     def duration(self) -> float:
@@ -79,6 +82,7 @@ def _make_fixation(points: list[GazePoint]) -> Fixation:
         start_time=points[0].timestamp,
         end_time=points[-1].timestamp,
         confidence=statistics.fmean(p.confidence for p in points),
+        dispersion=_dispersion(points),
     )
 
 

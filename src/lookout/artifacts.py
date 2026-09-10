@@ -133,6 +133,7 @@ def write_attributions(
                 "target": attr.target,
                 "confidence": attr.confidence,
                 "reason": attr.reason,
+                "margin_ratio": attr.margin_ratio,
                 "layout_source": attr.layout_source.value,
             }
             for viewer_id, start, end, attr in rows
@@ -151,6 +152,7 @@ def write_events(path: str | Path, events: Iterable[GazeEvent]) -> None:
                 "end_time": e.end_time,
                 "confidence": e.confidence,
                 "layout_source": e.layout_source.value,
+                "reason": e.reason,
             }
             for e in events
         ),
@@ -166,6 +168,7 @@ def read_events(path: str | Path) -> list[GazeEvent]:
             end_time=float(row["end_time"]),  # type: ignore[arg-type]
             confidence=float(row["confidence"]),  # type: ignore[arg-type]
             layout_source=LayoutSource(str(row["layout_source"])),
+            reason=str(row.get("reason", "")),
         )
         for row in _read_jsonl(path)
     ]

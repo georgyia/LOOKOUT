@@ -41,7 +41,15 @@ def write_csv(path: str | Path, events: list[GazeEvent]) -> None:
     with Path(path).open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(
-            ["viewer_id", "target", "start_time", "end_time", "confidence", "layout_source"]
+            [
+                "viewer_id",
+                "target",
+                "start_time",
+                "end_time",
+                "confidence",
+                "layout_source",
+                "reason",
+            ]
         )
         for event in sorted(events, key=lambda e: (e.viewer_id, e.start_time)):
             writer.writerow(
@@ -52,6 +60,7 @@ def write_csv(path: str | Path, events: list[GazeEvent]) -> None:
                     f"{event.end_time:.3f}",
                     f"{event.confidence:.3f}",
                     event.layout_source.value,
+                    event.reason,
                 ]
             )
 
