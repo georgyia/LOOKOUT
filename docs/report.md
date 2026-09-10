@@ -92,6 +92,7 @@ observe it.
 | `low_face_hit_rate` | Faces were resolved in under half the crops. |
 | `high_off_screen_rate` | Over half of directions fell outside the screen. |
 | `no_events` | Directions were recorded but none survived. |
+| `uncalibrated_viewers` | Viewers kept the shared angle-to-screen prior instead of a fitted mapping. |
 | `concentrated_targets` | One target holds most of the attributed duration. |
 | `low_target_entropy` | Duration carries little information about who looked at whom. |
 | `centre_clustered_gaze` | Most mapped points land in the central ninth. |

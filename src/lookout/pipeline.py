@@ -39,7 +39,7 @@ from .models import (
     Region,
 )
 from .screen_mapping import ScreenMappingParams, map_direction
-from .speaker import SpeakerSegment
+from .speaker import SpeakerSegment, aggregate_speaker_segments, detect_highlighted_tile
 from .temporal import detect_fixations, median_smooth
 
 __all__ = [
@@ -216,17 +216,31 @@ def analyze(
     # they leave no trace anywhere downstream.
     faces: dict[str, tuple[int, int]] = {}
     participants: set[str] = set()
+    # Speaker flags, collected here because only observation has the frames.
+    speaking: list[tuple[float, float, str, float]] = []
+    frame_step = 1.0 / config.target_fps
 
     for recorded in recording_layouts:
         for region in recorded.participant_regions():
             assert region.participant_id is not None
             participants.add(region.participant_id)
 
+    tiles_at = dict(per_frame_tiles)
     for frame in frames:
         layout = _active(recording_layouts, frame.timestamp)
         if layout is None:
             continue
-        for region in layout.participant_regions():
+
+        regions = layout.participant_regions()
+        highlighted = detect_highlighted_tile(frame.image, tiles_at.get(frame.timestamp, ()))
+        if highlighted is not None and highlighted < len(regions):
+            speaker_id = regions[highlighted].participant_id
+            if speaker_id is not None:
+                speaking.append(
+                    (frame.timestamp, frame.timestamp + frame_step, speaker_id, 1.0)
+                )
+
+        for region in regions:
             assert region.participant_id is not None
             crop = _crop_region(frame.image, region)
             observation = gaze_stage(crop, region.participant_id, frame.timestamp)
@@ -237,6 +251,10 @@ def analyze(
 
     store.write_gaze(out / GAZE_RAW, directions)
     artifacts.write_layouts(out / LAYOUT, recording_layouts)
+    artifacts.write_speaker_segments(
+        out / SPEAKER,
+        aggregate_speaker_segments(speaking, cue="highlight", max_gap=2.0 * frame_step),
+    )
 
     coverage, calibrations = attribute(out, config, viewer_layouts)
     return (

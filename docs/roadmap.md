@@ -53,8 +53,8 @@
 
 ## Phase 6 — research extensions
 
-- [ ] Implicit per-viewer calibration
-- [ ] Per-viewer layouts (manifest / inferred)
+- [x] Implicit per-viewer calibration
+- [x] Per-viewer layouts (manifest)
 - [ ] Speaker diarization
 - [ ] Opt-in face re-identification
 

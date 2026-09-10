@@ -145,3 +145,56 @@ def test_a_participant_with_no_face_still_appears_in_coverage(tmp_path: Path) ->
     assert per_participant["slot_3"].face_hit_rate == 0.0
     assert per_participant["slot_3"].directions == 0
     assert coverage.face_hit_rate == 0.75
+
+
+def _highlighted_grid_frame(highlight: int, w: int = 640, h: int = 360, gutter: int = 10):
+    """A 2x2 gallery with an active-speaker ring drawn around one tile."""
+
+    image = _grid_frame(w, h, gutter)
+    r, c = divmod(highlight, 2)
+    x0, y0 = int(c * w / 2) + gutter, int(r * h / 2) + gutter
+    x1, y1 = int((c + 1) * w / 2) - gutter, int((r + 1) * h / 2) - gutter
+    ring = (0, 255, 255)
+    image[y0:y1, x0 : x0 + 5] = ring
+    image[y0:y1, x1 - 5 : x1] = ring
+    image[y0 : y0 + 5, x0:x1] = ring
+    image[y1 - 5 : y1, x0:x1] = ring
+    return image
+
+
+def test_observation_records_who_was_speaking(tmp_path: Path) -> None:
+    """Speaker context needs the frames, and attribution has neither video nor
+    model. Deriving it during observation is what lets a stored run be
+    re-interpreted with calibration later."""
+
+    from lookout.pipeline import SPEAKER
+
+    video = tmp_path / "clip.avi"
+    cv2 = pytest.importorskip("cv2")
+    writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"MJPG"), 30, (640, 360))
+    assert writer.isOpened()
+    frame = _highlighted_grid_frame(highlight=2)
+    for _ in range(60):
+        writer.write(frame)
+    writer.release()
+
+    out = tmp_path / "run"
+    analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
+
+    segments = artifacts.read_speaker_segments(out / SPEAKER)
+    assert segments, "the highlighted tile should have produced a speaker segment"
+    assert {s.participant_id for s in segments} == {"slot_2"}
+    assert all(s.cue == "highlight" for s in segments)
+
+
+def test_a_clip_with_no_highlight_records_no_speaker(tmp_path: Path) -> None:
+    """Absence of a cue is not a speaker of unknown identity."""
+
+    from lookout.pipeline import SPEAKER
+
+    video = tmp_path / "clip.avi"
+    _write_video(video)
+    out = tmp_path / "run"
+    analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
+
+    assert artifacts.read_speaker_segments(out / SPEAKER) == []

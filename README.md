@@ -75,6 +75,9 @@ never scored against ground truth says so instead of quoting an accuracy. See
 lookout analyze clip.mp4 --out run/ --model models/face_landmarker.task
 lookout report --out run/                    # re-render without re-running
 lookout report --out run/ --truth truth.jsonl  # ...and score it
+
+# replace the v1 assumptions with facts, where you have them:
+lookout attribute --out run/ --manifest layouts.json --calibrate
 ```
 
 Research decisions live in [docs/research/](docs/research); the throwaway code
@@ -93,7 +96,7 @@ behind them lives in [experiments/](experiments).
 - [x] Temporal smoothing and gaze events
 - [x] Interactive timeline/report
 - [ ] Speaker context and audio diarization
-- [ ] Per-viewer layouts (manifest / inferred)
+- [x] Per-viewer layouts (manifest / inferred)
 - [ ] Performance optimization
 - [ ] Live meeting input experiments
 
