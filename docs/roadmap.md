@@ -46,6 +46,8 @@
 - [ ] Interaction graph
 - [x] JSON/CSV export
 - [x] Interactive (static HTML) report
+- [x] Run record with provenance and coverage
+- [x] Degradation and distribution diagnostics
 - [x] Evaluation harness
 
 ## Phase 6 — research extensions

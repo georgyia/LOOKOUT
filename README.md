@@ -65,6 +65,18 @@ Optional model adapters are extras and are never imported by the core:
 pip install -e ".[dev,face,appearance,ocr]"
 ```
 
+Every run writes a single schema-versioned record, `report.json`, carrying the
+provenance, configuration, coverage and degradations behind its numbers; the
+HTML, Markdown and CSV beside it are renderings of that record. A run that was
+never scored against ground truth says so instead of quoting an accuracy. See
+[docs/report.md](docs/report.md).
+
+```bash
+lookout analyze clip.mp4 --out run/ --model models/face_landmarker.task
+lookout report --out run/                    # re-render without re-running
+lookout report --out run/ --truth truth.jsonl  # ...and score it
+```
+
 Research decisions live in [docs/research/](docs/research); the throwaway code
 behind them lives in [experiments/](experiments).
 

@@ -48,3 +48,14 @@ and propagates the source into every result.
 
 Together these support reprocessing, changing layouts, uncertainty, and
 alternative attribution algorithms. See research note 01 for the rationale.
+
+## Reporting
+
+Reporting is a stage over a single document, not a second summary computed from
+the events. `lookout.runrecord` holds the provenance, configuration, coverage,
+degradations and diagnostics of a run; `lookout.report` renders it. Nothing in
+the rendering layer recomputes a number.
+
+The order the report presents is part of the contract: evidence before results,
+and an explicit verdict on whether the run was scored at all. See
+[report.md](report.md).
