@@ -15,11 +15,14 @@ from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import Any
 
-from . import artifacts, report, runrecord
+from . import artifacts, report, runrecord, store
 from .coverage import Coverage, detect_degradations
+from .diagnostics import build_diagnostics, distribution_warnings
 from .evaluate import evaluate, load_truth
 from .pipeline import (
     EVENTS,
+    GAZE_RAW,
+    GAZE_SCREEN,
     AnalysisConfig,
     analyze,
     appearance_stage,
@@ -67,6 +70,13 @@ def _write_reports(
     events = artifacts.read_events(out / EVENTS)
     results: dict[str, Any] = dict(report.summarize(events))
 
+    points = artifacts.read_points(out / GAZE_SCREEN) if (out / GAZE_SCREEN).exists() else []
+    directions = store.read_gaze(out / GAZE_RAW) if (out / GAZE_RAW).exists() else []
+    diagnostics = build_diagnostics(
+        events, points, directions, participants=len(coverage.per_participant)
+    )
+    warnings = distribution_warnings(diagnostics, coverage.layout_sources)
+
     if provenance_from is not None:
         video = video or (
             provenance_from.provenance.video.path if provenance_from.provenance.video else None
@@ -77,7 +87,8 @@ def _write_reports(
         config,
         results,
         coverage=coverage,
-        degradations=detect_degradations(coverage),
+        diagnostics=diagnostics,
+        degradations=detect_degradations(coverage) + warnings,
         video=video,
         adapters=adapters,
         command=sys.argv,

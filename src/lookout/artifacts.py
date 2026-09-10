@@ -28,6 +28,7 @@ __all__ = [
     "write_layouts",
     "read_layouts",
     "write_points",
+    "read_points",
     "write_attributions",
     "write_events",
     "read_events",
@@ -117,6 +118,19 @@ def write_points(path: str | Path, points: Iterable[GazePoint]) -> None:
             for p in points
         ),
     )
+
+
+def read_points(path: str | Path) -> list[GazePoint]:
+    return [
+        GazePoint(
+            timestamp=float(row["timestamp"]),  # type: ignore[arg-type]
+            person_id=str(row["person_id"]),
+            x=float(row["x"]),  # type: ignore[arg-type]
+            y=float(row["y"]),  # type: ignore[arg-type]
+            confidence=float(row["confidence"]),  # type: ignore[arg-type]
+        )
+        for row in _read_jsonl(path)
+    ]
 
 
 def write_attributions(
