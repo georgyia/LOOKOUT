@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 from . import artifacts, report, runrecord, store
 from .coverage import Coverage, detect_degradations
 from .diagnostics import build_diagnostics, distribution_warnings
-from .evaluate import evaluate, load_truth
+from .evaluate import EvaluationResult, evaluate, load_truth
 from .pipeline import (
     EVENTS,
     GAZE_RAW,
@@ -95,7 +96,8 @@ def _write_reports(
     )
     runrecord.write_record(out / REPORT, record)
     report.write_csv(out / "report.csv", events)
-    report.write_html(out / "report.html", events)
+    report.write_html(out / "report.html", record, events)
+    report.write_markdown(out / "report.md", record, events)
     return record
 
 
@@ -161,18 +163,49 @@ def _cmd_attribute(args: argparse.Namespace) -> None:
     _print_summary(record)
 
 
+def _cmd_report(args: argparse.Namespace) -> None:
+    """Re-render a stored run's report without re-running any stage.
+
+    The record already holds everything the report shows, so regenerating it
+    needs neither the video nor a model — only the run directory.
+    """
+
+    out = Path(args.out)
+    existing = _read_existing(out)
+    if existing is None:
+        raise SystemExit(f"no run record found in {out}; run 'lookout analyze' first")
+
+    events = artifacts.read_events(out / EVENTS)
+    record = existing
+    if args.truth:
+        truth = load_truth(args.truth)
+        result = evaluate(events, truth)
+        record = replace(existing, evaluation=_evaluation_summary(result, args.truth))
+
+    runrecord.write_record(out / REPORT, record)
+    report.write_csv(out / "report.csv", events)
+    report.write_html(out / "report.html", record, events)
+    report.write_markdown(out / "report.md", record, events)
+    print(report.verdict(record).headline)
+
+
+def _evaluation_summary(result: EvaluationResult, truth_path: str) -> dict[str, Any]:
+    return {
+        "truth_path": truth_path,
+        "truth_sha256": runrecord.file_digest(truth_path),
+        "total": result.total,
+        "hit_rate": round(result.hit_rate, 4),
+        "unknown_rate": round(result.unknown_rate, 4),
+        "off_screen_recall": round(result.off_screen_recall, 4),
+        "per_grid": {grid: round(result.grid_hit_rate(grid), 4) for grid in result.per_grid},
+    }
+
+
 def _cmd_evaluate(args: argparse.Namespace) -> None:
     events = artifacts.read_events(Path(args.out) / EVENTS)
     truth = load_truth(args.truth)
     result = evaluate(events, truth)
-    report_data = {
-        "total": result.total,
-        "hit_rate": round(result.hit_rate, 3),
-        "unknown_rate": round(result.unknown_rate, 3),
-        "off_screen_recall": round(result.off_screen_recall, 3),
-        "per_grid": {grid: round(result.grid_hit_rate(grid), 3) for grid in result.per_grid},
-    }
-    print(json.dumps(report_data, indent=2))
+    print(json.dumps(_evaluation_summary(result, args.truth), indent=2))
 
 
 def main() -> None:
@@ -195,6 +228,11 @@ def main() -> None:
     attribute_parser = sub.add_parser("attribute", help="re-run attribution from a stored run")
     attribute_parser.add_argument("--out", required=True)
     attribute_parser.set_defaults(func=_cmd_attribute)
+
+    report_parser = sub.add_parser("report", help="re-render the report for a stored run")
+    report_parser.add_argument("--out", required=True)
+    report_parser.add_argument("--truth", help="ground truth to score the run against")
+    report_parser.set_defaults(func=_cmd_report)
 
     evaluate_parser = sub.add_parser("evaluate", help="score a run against ground truth")
     evaluate_parser.add_argument("--out", required=True)
