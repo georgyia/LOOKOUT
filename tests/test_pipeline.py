@@ -49,7 +49,7 @@ def test_analyze_writes_artifacts_and_events(tmp_path: Path) -> None:
     _write_video(video)
     out = tmp_path / "run"
 
-    coverage = analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
+    coverage, _ = analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
 
     for name in (GAZE_RAW, LAYOUT, "gaze_screen.jsonl", "attribution.jsonl", EVENTS):
         assert (out / name).exists(), name
@@ -107,7 +107,7 @@ def test_coverage_funnel_reconciles(tmp_path: Path) -> None:
     _write_video(video)
     out = tmp_path / "run"
 
-    coverage = analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
+    coverage, _ = analyze(video, out, _fake_stage, AnalysisConfig(target_fps=5.0))
 
     assert coverage.frames == 5
     assert coverage.face_attempts == 20  # 4 tiles x 5 sampled frames
@@ -136,7 +136,7 @@ def test_a_participant_with_no_face_still_appears_in_coverage(tmp_path: Path) ->
     _write_video(video)
     out = tmp_path / "run"
 
-    coverage = analyze(video, out, _one_slot_only, AnalysisConfig(target_fps=5.0))
+    coverage, _ = analyze(video, out, _one_slot_only, AnalysisConfig(target_fps=5.0))
 
     per_participant = {entry.participant_id: entry for entry in coverage.per_participant}
     assert "slot_3" in per_participant

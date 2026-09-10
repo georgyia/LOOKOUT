@@ -21,6 +21,7 @@ from .models import (
     Region,
     RegionKind,
 )
+from .speaker import SpeakerSegment
 
 __all__ = [
     "region_to_dict",
@@ -32,6 +33,8 @@ __all__ = [
     "write_attributions",
     "write_events",
     "read_events",
+    "write_speaker_segments",
+    "read_speaker_segments",
 ]
 
 
@@ -171,6 +174,42 @@ def write_events(path: str | Path, events: Iterable[GazeEvent]) -> None:
             for e in events
         ),
     )
+
+
+def write_speaker_segments(path: str | Path, segments: Iterable[SpeakerSegment]) -> None:
+    """Persist speaker segments.
+
+    Speaker context is an observation: deriving it needs the frames, and
+    attribution has neither video nor model. Writing it here is what lets a
+    stored run be re-interpreted with calibration later.
+    """
+
+    _write_jsonl(
+        path,
+        (
+            {
+                "participant_id": s.participant_id,
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "confidence": s.confidence,
+                "cue": s.cue,
+            }
+            for s in segments
+        ),
+    )
+
+
+def read_speaker_segments(path: str | Path) -> list[SpeakerSegment]:
+    return [
+        SpeakerSegment(
+            participant_id=str(row["participant_id"]),
+            start_time=float(row["start_time"]),  # type: ignore[arg-type]
+            end_time=float(row["end_time"]),  # type: ignore[arg-type]
+            confidence=float(row["confidence"]),  # type: ignore[arg-type]
+            cue=str(row["cue"]),
+        )
+        for row in _read_jsonl(path)
+    ]
 
 
 def read_events(path: str | Path) -> list[GazeEvent]:
