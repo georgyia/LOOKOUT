@@ -49,6 +49,16 @@ gitignored. Results, once collected, are summarized in notes 03, 05, and 06.
 - >= 80% hit-rate on a 2x2 grid, >= 60% on 3x3, reported alongside the
   unknown-rate. These are targets to test, and may be revised by the evidence.
 
+**Revised by note 13.** A hit rate is meaningless without the baseline it is
+measured against: 60% on a 3x3 grid is a strong result against chance (11%) and
+a weak one against a majority-truth baseline of 55%. State these targets as a
+margin over the best baseline, which `lookout evaluate` now reports.
+
+Note 13 also measures what these targets demand of the estimator: 3x3
+attribution survives about 1 degree of angular error and is unusable past 6.
+Published appearance models sit near 4 degrees, so the 3x3 target is a bet on
+better models rather than better tuning.
+
 ## Risks
 
 - One self-recording is a single subject and setup; it validates the pipeline

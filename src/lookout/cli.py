@@ -179,7 +179,7 @@ def _cmd_report(args: argparse.Namespace) -> None:
     record = existing
     if args.truth:
         truth = load_truth(args.truth)
-        result = evaluate(events, truth)
+        result = evaluate(events, truth, sample_step=args.sample_step)
         record = replace(existing, evaluation=_evaluation_summary(result, args.truth))
 
     runrecord.write_record(out / REPORT, record)
@@ -190,21 +190,44 @@ def _cmd_report(args: argparse.Namespace) -> None:
 
 
 def _evaluation_summary(result: EvaluationResult, truth_path: str) -> dict[str, Any]:
+    """The scores, always alongside what a trivial strategy would have scored."""
+
     return {
         "truth_path": truth_path,
         "truth_sha256": runrecord.file_digest(truth_path),
         "total": result.total,
         "hit_rate": round(result.hit_rate, 4),
+        "hit_rate_ci95": list(result.hit_rate_ci),
+        "baselines": {name: round(value, 4) for name, value in result.baselines.items()},
+        "beats_baseline": result.beats_baseline,
         "unknown_rate": round(result.unknown_rate, 4),
+        "unknown_breakdown": {
+            "silent": result.silent,
+            "unknown": result.explicit_unknown,
+            "low_confidence": result.low_confidence,
+        },
+        "wrong": result.wrong,
         "off_screen_recall": round(result.off_screen_recall, 4),
         "per_grid": {grid: round(result.grid_hit_rate(grid), 4) for grid in result.per_grid},
+        "expected_calibration_error": result.expected_calibration_error,
+        "reliability": [
+            {
+                "lower": b.lower,
+                "upper": b.upper,
+                "count": b.count,
+                "mean_confidence": b.mean_confidence,
+                "hit_rate": b.hit_rate,
+            }
+            for b in result.reliability
+        ],
+        "confusion": result.confusion,
     }
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> None:
     events = artifacts.read_events(Path(args.out) / EVENTS)
     truth = load_truth(args.truth)
-    result = evaluate(events, truth)
+    result = evaluate(events, truth, sample_step=args.sample_step)
     print(json.dumps(_evaluation_summary(result, args.truth), indent=2))
 
 
@@ -232,11 +255,21 @@ def main() -> None:
     report_parser = sub.add_parser("report", help="re-render the report for a stored run")
     report_parser.add_argument("--out", required=True)
     report_parser.add_argument("--truth", help="ground truth to score the run against")
+    report_parser.add_argument(
+        "--sample-step",
+        type=float,
+        help="score truth intervals every N seconds instead of at their midpoint",
+    )
     report_parser.set_defaults(func=_cmd_report)
 
     evaluate_parser = sub.add_parser("evaluate", help="score a run against ground truth")
     evaluate_parser.add_argument("--out", required=True)
     evaluate_parser.add_argument("--truth", required=True)
+    evaluate_parser.add_argument(
+        "--sample-step",
+        type=float,
+        help="score truth intervals every N seconds instead of at their midpoint",
+    )
     evaluate_parser.set_defaults(func=_cmd_evaluate)
 
     args = parser.parse_args()

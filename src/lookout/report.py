@@ -91,9 +91,9 @@ def verdict(record: RunRecord) -> Verdict:
             detail=detail,
         )
 
-    hit_rate = float(record.evaluation.get("hit_rate", 0.0))
+    hit_rate = _number(record.evaluation.get("hit_rate"))
     baselines = record.evaluation.get("baselines") or {}
-    best_baseline = max((float(v) for v in baselines.values()), default=0.0)
+    best_baseline = max((_number(v) for v in baselines.values()), default=0.0)
     beats = hit_rate > best_baseline
 
     return Verdict(
@@ -170,6 +170,55 @@ def limitations(record: RunRecord) -> tuple[str, ...]:
             )
 
     return tuple(found)
+
+
+def _number(value: object, default: float = 0.0) -> float:
+    return float(value) if isinstance(value, (int, float)) else default
+
+
+def _evaluation_lines(evaluation: dict[str, object]) -> list[str]:
+    """Scores, always next to what a trivial strategy would have scored."""
+
+    out: list[str] = []
+    hit_rate = _number(evaluation.get("hit_rate"))
+    ci = evaluation.get("hit_rate_ci95")
+    interval = (
+        f" (95% CI {_number(ci[0]):.1%}-{_number(ci[1]):.1%})"
+        if isinstance(ci, list) and len(ci) == 2
+        else ""
+    )
+    out.append(f"- Hit rate: {hit_rate:.1%}{interval} over {evaluation.get('total', 0)} samples")
+
+    baselines = evaluation.get("baselines")
+    if isinstance(baselines, dict) and baselines:
+        out.append("- Baselines:")
+        best = max(_number(v) for v in baselines.values())
+        for name, value in sorted(baselines.items(), key=lambda kv: -_number(kv[1])):
+            marker = " <- best" if _number(value) == best else ""
+            out.append(f"    - {name}: {_number(value):.1%}{marker}")
+        if not evaluation.get("beats_baseline", True):
+            out.append(
+                "- **The estimator does not beat its best baseline**, so this run carries "
+                "no evidence of gaze signal."
+            )
+
+    breakdown = evaluation.get("unknown_breakdown")
+    if isinstance(breakdown, dict):
+        parts = ", ".join(f"{k} {v}" for k, v in breakdown.items())
+        out.append(f"- Declined to answer: {parts}")
+    out.append(f"- Wrong answers: {evaluation.get('wrong', 0)}")
+    out.append(f"- Off-screen recall: {_number(evaluation.get('off_screen_recall')):.1%}")
+
+    ece = evaluation.get("expected_calibration_error")
+    if ece is not None:
+        out.append(f"- Expected calibration error: {_number(ece):.3f}")
+
+    per_grid = evaluation.get("per_grid")
+    if isinstance(per_grid, dict) and per_grid:
+        grids = ", ".join(f"{g} {_number(v):.1%}" for g, v in sorted(per_grid.items()))
+        out.append(f"- By grid: {grids}")
+    out.append("")
+    return out
 
 
 def _funnel(coverage: Coverage) -> list[tuple[str, int, str]]:
@@ -274,9 +323,7 @@ def render_markdown(record: RunRecord, events: list[GazeEvent]) -> str:
     if record.evaluation is None:
         out += ["Not measured. No ground truth was supplied for this recording.", ""]
     else:
-        for key, value in record.evaluation.items():
-            out.append(f"- {key}: {value}")
-        out.append("")
+        out += _evaluation_lines(record.evaluation)
 
     out += ["## Results", "", "These are estimates. Read them against the sections above.", ""]
     summary = summarize(events)
@@ -485,10 +532,11 @@ def render_html(record: RunRecord, events: list[GazeEvent]) -> str:
             "recording, so no accuracy figure appears anywhere in this report.</p>"
         )
     else:
-        parts.append("<dl>")
-        for key, value in record.evaluation.items():
-            parts.append(f"<dt>{_esc(key)}</dt><dd>{_esc(value)}</dd>")
-        parts.append("</dl>")
+        parts.append("<ul class='notes'>")
+        for line in _evaluation_lines(record.evaluation):
+            if line.strip():
+                parts.append(f"<li>{_esc(line.strip().lstrip('- '))}</li>")
+        parts.append("</ul>")
 
     parts.append("<h2>Results</h2>")
     parts.append('<p class="disclaimer">Estimates. Read against the sections above.</p>')

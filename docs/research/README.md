@@ -45,3 +45,4 @@ numbers over paragraphs.
 - `10-per-viewer-layouts.md` — manifest and inferred layouts (#19)
 - `11-reidentification-privacy.md` — re-identification privacy review (#20)
 - `12-run-report.md` — what a run report must contain (#27)
+- `13-eval-v2.md` — making a hit rate readable (#30)
