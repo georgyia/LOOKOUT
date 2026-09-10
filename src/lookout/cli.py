@@ -17,14 +17,16 @@ from pathlib import Path
 from typing import Any
 
 from . import artifacts, report, runrecord, store
-from .coverage import Coverage, detect_degradations
+from .coverage import Coverage, Degradation, detect_degradations
 from .diagnostics import build_diagnostics, distribution_warnings
 from .evaluate import EvaluationResult, evaluate, load_truth
+from .manifest import load_manifest
 from .pipeline import (
     EVENTS,
     GAZE_RAW,
     GAZE_SCREEN,
     AnalysisConfig,
+    CalibrationReport,
     analyze,
     appearance_stage,
     attribute,
@@ -56,6 +58,7 @@ def _write_reports(
     out: Path,
     config: AnalysisConfig,
     coverage: Coverage,
+    calibrations: tuple[CalibrationReport, ...] = (),
     *,
     video: str | None = None,
     adapters: tuple[AdapterInfo, ...] = (),
@@ -77,6 +80,16 @@ def _write_reports(
         events, points, directions, participants=len(coverage.per_participant)
     )
     warnings = distribution_warnings(diagnostics, coverage.layout_sources)
+    warnings += _calibration_warnings(calibrations)
+    results["calibration"] = [
+        {
+            "viewer_id": c.viewer_id,
+            "calibrated": c.calibrated,
+            "labels": c.labels,
+            "reason": c.reason,
+        }
+        for c in calibrations
+    ]
 
     if provenance_from is not None:
         video = video or (
@@ -99,6 +112,34 @@ def _write_reports(
     report.write_html(out / "report.html", record, events)
     report.write_markdown(out / "report.md", record, events)
     return record
+
+
+def _calibration_warnings(
+    calibrations: tuple[CalibrationReport, ...],
+) -> tuple[Degradation, ...]:
+    """A calibrated run and an assumed one must not read alike."""
+
+    if not calibrations:
+        return ()
+    assumed = [c for c in calibrations if not c.calibrated]
+    if not assumed:
+        return ()
+    reasons = ", ".join(sorted({c.reason for c in assumed}))
+    return (
+        Degradation(
+            stage="mapping",
+            code="uncalibrated_viewers",
+            detail=(
+                f"{len(assumed)} of {len(calibrations)} viewers kept the shared "
+                f"angle-to-screen prior ({reasons})."
+            ),
+            impact=(
+                "The prior encodes one laptop's geometry. A viewer on a different "
+                "screen has a systematically different angle-to-screen relationship, "
+                "which biases every target for that viewer in the same direction."
+            ),
+        ),
+    )
 
 
 def _read_existing(out: Path) -> RunRecord | None:
@@ -147,9 +188,15 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
         adapters.append(_adapter("gaze", "geometric", None, "numpy"))
 
     config = AnalysisConfig(target_fps=args.fps)
-    coverage = analyze(args.video, args.out, stage, config)
+    layouts = load_manifest(args.manifest) if args.manifest else None
+    coverage, calibrations = analyze(args.video, args.out, stage, config, layouts)
     record = _write_reports(
-        Path(args.out), config, coverage, video=args.video, adapters=tuple(adapters)
+        Path(args.out),
+        config,
+        coverage,
+        calibrations,
+        video=args.video,
+        adapters=tuple(adapters),
     )
     _print_summary(record)
 
@@ -158,8 +205,11 @@ def _cmd_attribute(args: argparse.Namespace) -> None:
     out = Path(args.out)
     existing = _read_existing(out)
     config = AnalysisConfig()
-    coverage = attribute(out, config)
-    record = _write_reports(out, config, coverage, provenance_from=existing)
+    layouts = load_manifest(args.manifest) if args.manifest else None
+    coverage, calibrations = attribute(out, config, layouts, calibrate=args.calibrate)
+    record = _write_reports(
+        out, config, coverage, calibrations, provenance_from=existing
+    )
     _print_summary(record)
 
 
@@ -246,10 +296,21 @@ def main() -> None:
     analyze_parser.add_argument("--gaze", choices=["geometric", "appearance"], default="geometric")
     analyze_parser.add_argument("--weights", help="gaze model weights (for --gaze appearance)")
     analyze_parser.add_argument("--fps", type=float, default=5.0)
+    analyze_parser.add_argument(
+        "--manifest", help="per-viewer layouts, replacing the shared-layout assumption"
+    )
     analyze_parser.set_defaults(func=_cmd_analyze)
 
     attribute_parser = sub.add_parser("attribute", help="re-run attribution from a stored run")
     attribute_parser.add_argument("--out", required=True)
+    attribute_parser.add_argument(
+        "--manifest", help="per-viewer layouts, replacing the shared-layout assumption"
+    )
+    attribute_parser.add_argument(
+        "--calibrate",
+        action="store_true",
+        help="fit each viewer's angle-to-screen mapping from stored speaker segments",
+    )
     attribute_parser.set_defaults(func=_cmd_attribute)
 
     report_parser = sub.add_parser("report", help="re-render the report for a stored run")
