@@ -42,6 +42,13 @@ CONFIG = AnalysisConfig(
 )
 
 
+def _events_for(out: Path, viewer: str) -> list:
+    """One viewer's events. Participants with no observation now also produce
+    not_visible events, which these tests are not about."""
+
+    return [e for e in artifacts.read_events(out / EVENTS) if e.viewer_id == viewer]
+
+
 def _write_run(out: Path, directions: list[GazeDirection], layout: Layout) -> None:
     out.mkdir(parents=True, exist_ok=True)
     store.write_gaze(out / GAZE_RAW, directions)
@@ -73,7 +80,7 @@ def test_a_manifest_replaces_the_shared_layout_assumption(tmp_path: Path) -> Non
     _write_run(out, directions, recording)
 
     assumed, _ = attribute(out, CONFIG)
-    (assumed_event,) = artifacts.read_events(out / EVENTS)
+    (assumed_event,) = _events_for(out, "bob")
     assert assumed_event.target == "alice"
     assert assumed.layout_sources == ("assumed_shared",)
 
@@ -88,7 +95,7 @@ def test_a_manifest_replaces_the_shared_layout_assumption(tmp_path: Path) -> Non
         LayoutSource.MANIFEST,
     )
     known, _ = attribute(out, CONFIG, [bob])
-    (known_event,) = artifacts.read_events(out / EVENTS)
+    (known_event,) = _events_for(out, "bob")
     assert known_event.target == "carol"
     assert known.layout_sources == ("manifest",)
 

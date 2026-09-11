@@ -48,10 +48,10 @@ def _coverage(sources: tuple[str, ...] = ("assumed_shared",)) -> Coverage:
         layouts=1,
         participants_detected=3,
         face_attempts=30,
-        face_hits=27,
-        directions=27,
-        points=25,
-        off_screen=2,
+        face_hits=20,
+        directions=20,
+        points=19,
+        off_screen=1,
         fixations=6,
         attributions=6,
         events=3,
@@ -61,8 +61,8 @@ def _coverage(sources: tuple[str, ...] = ("assumed_shared",)) -> Coverage:
                                 points=10, events=1),
             ParticipantCoverage("bob", face_attempts=10, face_hits=10, directions=10,
                                 points=9, off_screen=1, events=2),
-            ParticipantCoverage("carol", face_attempts=10, face_hits=7, directions=7,
-                                points=6, off_screen=1, events=0),
+            ParticipantCoverage("carol", face_attempts=10, face_hits=0, directions=0,
+                                points=0, events=0, not_visible=1),
         ),
     )
 
@@ -134,7 +134,7 @@ def test_limitations_are_derived_from_this_run_not_written_down() -> None:
     notes = " ".join(limitations(_record()))
     assert "never scored" in notes
     assert "cross-viewer targets are not credible" in notes
-    assert "carol" in notes  # produced no events at all
+    assert "carol" in notes  # examined, never resolved
 
 
 def test_a_scored_run_with_known_layouts_drops_those_limitations() -> None:
@@ -143,11 +143,19 @@ def test_a_scored_run_with_known_layouts_drops_those_limitations() -> None:
     assert "cross-viewer" not in notes
 
 
-def test_a_silent_participant_is_called_out_rather_than_omitted() -> None:
-    """Absence means the pipeline saw nothing usable, not that nobody looked."""
+def test_an_unresolvable_participant_is_called_out_rather_than_omitted() -> None:
+    """Absence of a result is not absence of a person, and the report says which."""
 
     notes = " ".join(limitations(_record()))
-    assert "saw nothing usable" in notes
+    assert "not visible rather than omitted" in notes
+    assert "could not see them" in notes
+
+
+def test_the_per_participant_table_states_which_case_applies() -> None:
+    text = render_markdown(_record(), _events())
+    assert "| alice |" in text
+    assert "observed" in text
+    assert "present, not resolvable" in text
 
 
 # --------------------------------------------------------------------- ordering

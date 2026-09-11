@@ -21,7 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from .coverage import Coverage
+from .coverage import Coverage, ParticipantCoverage
 from .models import GazeEvent, GazeTarget
 from .runrecord import DISCLAIMER, RunRecord
 
@@ -145,13 +145,18 @@ def limitations(record: RunRecord) -> tuple[str, ...]:
         )
 
     if coverage:
-        silent = [e.participant_id for e in coverage.per_participant if e.events == 0]
-        if silent:
+        unresolvable = [
+            e.participant_id
+            for e in coverage.per_participant
+            if not e.observed and e.face_attempts
+        ]
+        if unresolvable:
             found.append(
-                "No events were produced for "
-                + ", ".join(sorted(silent))
-                + ". Absence here means the pipeline saw nothing usable, not that the "
-                "participant looked nowhere."
+                "No face was ever resolved for "
+                + ", ".join(sorted(unresolvable))
+                + ". They are reported as not visible rather than omitted: the pipeline "
+                "could not see them, which is not the same as their having looked "
+                "nowhere."
             )
 
     if record.diagnostics and record.diagnostics.unresolved_share > 0.25:
@@ -221,6 +226,20 @@ def _evaluation_lines(evaluation: dict[str, object]) -> list[str]:
     return out
 
 
+def _outcome(entry: ParticipantCoverage) -> str:
+    """Which of three cases applies, said out loud.
+
+    Absence of a result used to read as absence of a person. These are different
+    facts and the report should not leave the reader to infer which one it has.
+    """
+
+    if entry.observed:
+        return "observed"
+    if entry.face_attempts:
+        return "present, not resolvable"
+    return "not present in this layout"
+
+
 def _funnel(coverage: Coverage) -> list[tuple[str, int, str]]:
     """The funnel as ordered rows: label, count, and what the step means."""
 
@@ -286,12 +305,17 @@ def render_markdown(record: RunRecord, events: list[GazeEvent]) -> str:
         out += ["## Coverage", "", "| Stage | Count | |", "| --- | ---: | --- |"]
         for label, count, note in _funnel(record.coverage):
             out.append(f"| {label} | {count} | {note} |")
-        out += ["", "### Per participant", "", "| Participant | Crops | Faces | Rate | Events |",
-                "| --- | ---: | ---: | ---: | ---: |"]
+        out += [
+            "",
+            "### Per participant",
+            "",
+            "| Participant | Crops | Faces | Rate | Events | Outcome |",
+            "| --- | ---: | ---: | ---: | ---: | --- |",
+        ]
         for entry in record.coverage.per_participant:
             out.append(
                 f"| {entry.participant_id} | {entry.face_attempts} | {entry.face_hits} "
-                f"| {entry.face_hit_rate:.1%} | {entry.events} |"
+                f"| {entry.face_hit_rate:.1%} | {entry.events} | {_outcome(entry)} |"
             )
         out.append("")
 
@@ -482,7 +506,7 @@ def render_html(record: RunRecord, events: list[GazeEvent]) -> str:
         parts.append('<h3>Per participant</h3><div class="wrap"><table>')
         parts.append(
             '<tr><th>Participant</th><th class="n">Crops</th><th class="n">Faces</th>'
-            '<th class="n">Rate</th><th class="n">Events</th></tr>'
+            '<th class="n">Rate</th><th class="n">Events</th><th>Outcome</th></tr>'
         )
         for entry in cov.per_participant:
             parts.append(
@@ -490,7 +514,8 @@ def render_html(record: RunRecord, events: list[GazeEvent]) -> str:
                 f"<td class='n'>{entry.face_attempts}</td>"
                 f"<td class='n'>{entry.face_hits}</td>"
                 f"<td class='n'>{entry.face_hit_rate:.1%}</td>"
-                f"<td class='n'>{entry.events}</td></tr>"
+                f"<td class='n'>{entry.events}</td>"
+                f"<td>{_esc(_outcome(entry))}</td></tr>"
             )
         parts.append("</table></div>")
 

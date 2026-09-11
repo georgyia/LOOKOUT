@@ -22,7 +22,7 @@
 - [x] Galleries whose tiles abut
 - [x] Participant-to-region assignments
 - [x] Layout transitions
-- [ ] Hidden/not-visible participants
+- [x] Hidden/not-visible participants
 
 ## Phase 3 — gaze
 

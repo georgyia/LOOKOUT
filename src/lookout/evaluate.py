@@ -105,6 +105,7 @@ class EvaluationResult:
     silent: int = 0
     explicit_unknown: int = 0
     low_confidence: int = 0
+    not_visible: int = 0
     wrong: int = 0
     confusion: dict[str, dict[str, int]] = field(default_factory=dict)
     baselines: dict[str, float] = field(default_factory=dict)
@@ -290,7 +291,7 @@ def evaluate(
     """
 
     total = hits = unknown = wrong = 0
-    silent = explicit_unknown = low_confidence = 0
+    silent = explicit_unknown = low_confidence = not_visible = 0
     off_total = off_hits = 0
     per_grid: dict[str, list[int]] = {}
     confusion: dict[str, dict[str, int]] = {}
@@ -321,6 +322,8 @@ def evaluate(
                 unknown += 1
                 if predicted == GazeTarget.LOW_CONFIDENCE.value:
                     low_confidence += 1
+                elif predicted == GazeTarget.NOT_VISIBLE.value:
+                    not_visible += 1
                 else:
                     explicit_unknown += 1
                 hit = False
@@ -368,6 +371,7 @@ def evaluate(
         silent=silent,
         explicit_unknown=explicit_unknown,
         low_confidence=low_confidence,
+        not_visible=not_visible,
         wrong=wrong,
         confusion=confusion,
         baselines=_baselines(truth_targets, predictions, candidates),
