@@ -8,6 +8,11 @@ JSONL artifacts.
 `lookout report --out DIR [--truth FILE]` re-renders or re-scores a stored run
 without re-running any stage.
 
+`lookout compare RUN_A RUN_B` reports what differs between two runs, grouped by
+what the difference means: whether they are comparable at all, then coverage,
+then results. A hit-rate difference whose confidence intervals overlap is
+reported as inconclusive rather than as an improvement.
+
 ## Why the record exists
 
 A duration table answers *who looked at whom*. On its own it cannot say whether

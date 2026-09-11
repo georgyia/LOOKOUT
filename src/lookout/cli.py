@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import artifacts, report, runrecord, store
+from .compare import Comparison, compare
 from .coverage import Degradation, detect_degradations
 from .diagnostics import build_diagnostics, distribution_warnings
 from .evaluate import EvaluationResult, evaluate, load_truth
@@ -275,6 +276,42 @@ def _evaluation_summary(result: EvaluationResult, truth_path: str) -> dict[str, 
     }
 
 
+def _render_comparison(result: Comparison) -> str:
+    lines: list[str] = []
+
+    if not result.comparable:
+        lines.append("NOT DIRECTLY COMPARABLE")
+        lines += [f"  {d}" for d in result.blockers]
+        lines.append("")
+
+    if result.identical:
+        lines.append("No differences.")
+        return "\n".join(lines)
+
+    for title, entries in (
+        ("Configuration", result.configuration),
+        ("Coverage", result.coverage),
+        ("Results", result.results),
+        ("Evaluation", result.evaluation),
+    ):
+        if entries:
+            lines.append(f"{title}:")
+            lines += [f"  {d}" for d in entries]
+            lines.append("")
+
+    if result.notes:
+        lines.append("Notes:")
+        lines += [f"  - {note}" for note in result.notes]
+
+    return "\n".join(lines).rstrip()
+
+
+def _cmd_compare(args: argparse.Namespace) -> None:
+    left = runrecord.read_record(Path(args.left) / REPORT)
+    right = runrecord.read_record(Path(args.right) / REPORT)
+    print(_render_comparison(compare(left, right)))
+
+
 def _cmd_evaluate(args: argparse.Namespace) -> None:
     events = artifacts.read_events(Path(args.out) / EVENTS)
     truth = load_truth(args.truth)
@@ -323,6 +360,11 @@ def main() -> None:
         help="score truth intervals every N seconds instead of at their midpoint",
     )
     report_parser.set_defaults(func=_cmd_report)
+
+    compare_parser = sub.add_parser("compare", help="report what differs between two runs")
+    compare_parser.add_argument("left")
+    compare_parser.add_argument("right")
+    compare_parser.set_defaults(func=_cmd_compare)
 
     evaluate_parser = sub.add_parser("evaluate", help="score a run against ground truth")
     evaluate_parser.add_argument("--out", required=True)

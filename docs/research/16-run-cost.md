@@ -54,23 +54,42 @@ run record for humans to compare across runs, and deliberately not asserted.
 
 Measured on this machine, the YuNet observation path at 5 fps sampling:
 
-| Recording | Video | Wall | Throughput |
-| --- | ---: | ---: | ---: |
-| Decode and tile detection alone | 60 s | 5.3 s | 11.2x realtime |
-| 3-minute clip, end to end | 180 s | 16 s | 11.3x realtime |
-| **Full recording, end to end** | **2561 s (42.7 min)** | **215 s (3.6 min)** | **11.9x realtime** |
+| Recording | Video | Wall | Throughput | Face hit rate |
+| --- | ---: | ---: | ---: | ---: |
+| 3-minute clip | 180 s | 23.5 s | 7.7x realtime | 99.0% |
+| **Full recording** | **2561 s (42.7 min)** | **501 s (8.3 min)** | **5.1x realtime** | **99.4%** |
 
-The full run was then measured rather than projected, which is the point: the
-estimate that it "would be slow" was wrong by an order of magnitude. Forty-three
-minutes of video is under four minutes of work, and the 3-minute clip was never
-necessary on performance grounds.
+The full run was measured rather than projected, which is the point: the estimate
+that it "would be slow" was wrong by an order of magnitude. Forty-three minutes
+of video is eight minutes of work.
 
-Throughput is flat across the three, which is the reassuring part: cost is
-linear in sampled frames, so the projection from a short clip is trustworthy.
+Throughput falls with recording length because longer recordings contain more
+layout changes, and segmentation work is not constant per frame. A projection
+from a short clip is therefore optimistic by roughly a third here — enough to
+matter, and an argument for recording cost per run rather than assuming it
+transfers.
 
-The full run also corrects a figure. Face hit rate over 96,899 tile crops is
-73.7%, against 82.9% on the 3-minute clip — the clip was a more favourable
-stretch than the call as a whole, and any number taken from it was optimistic.
+### A correction
+
+An earlier version of this note reported 11.9x realtime and a face hit rate of
+73.7% for the full recording, against 82.9% for the clip, and concluded that the
+clip was an unrepresentative stretch. **Both figures were artifacts and the
+conclusion was wrong.**
+
+The full run had been produced by a script that froze the tile layout from the
+first frame. On the full recording the first frame has no usable tiles, so the
+layout was empty, every attribution afterwards was "no region", and the tile
+crops being measured were the wrong rectangles. The hit-rate gap was a property
+of that bug, not of the recording.
+
+`lookout compare` found it in one command, by putting the two records side by
+side and showing `unresolved_share` at 1.0 for the full run. Both records had
+existed for some time. Nothing had compared them.
+
+Re-run against the production layout detector, the two recordings agree: 99.0%
+and 99.4%. The clip was representative after all, and the correct reading of the
+original 82.9% is that a forced grid was cropping tiles badly enough to lose a
+sixth of the faces in them.
 
 That matters beyond the arithmetic. The clip was chosen partly for speed, and
 the choice cost coverage: note 15 records that the call switches to a screen
