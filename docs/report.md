@@ -71,8 +71,19 @@ miscounted stage fails loudly rather than reading plausibly.
 | `layout_sources` | Which layout provenances were in play. |
 
 A participant appearing with `face_attempts > 0` and `face_hits == 0` is a tile
-the observer never resolved. Such a participant produces no directions and would
-otherwise be absent from the output entirely.
+the observer never resolved. They produce no directions, and the report states
+which of three cases applies rather than leaving the reader to infer it:
+
+| Outcome | Meaning |
+| --- | --- |
+| `observed` | A face was resolved at least once. |
+| `present, not resolvable` | The tile was examined and no face was ever found. |
+| `not present in this layout` | No tile; the participant was not on screen. |
+
+`not_visible` counts the windows in which a participant held a region but
+nothing could be attributed. These are emitted as events so that absence of a
+result is not read as absence of a person, and are counted separately from
+attributed events so the two cannot be confused.
 
 ### `degradations`
 
@@ -115,6 +126,11 @@ is not concentrated, it is empty, and coverage already says so.
 
 `null` when the run was never scored. The report's headline turns on this: an
 unscored run quotes no accuracy figure anywhere.
+
+`unknown_breakdown` separates the four ways a prediction declines to answer:
+`silent` (no prediction at all), `unknown` (no region, or an ambiguous overlap),
+`low_confidence` (below the attribution floor), and `not_visible` (the
+participant could not be observed). None is ever counted as a wrong answer.
 
 ### `results`
 
