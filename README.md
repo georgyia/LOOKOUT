@@ -78,6 +78,8 @@ lookout report --out run/ --truth truth.jsonl  # ...and score it
 
 # replace the v1 assumptions with facts, where you have them:
 lookout attribute --out run/ --manifest layouts.json --calibrate
+
+lookout compare run-a/ run-b/            # what changed, and whether it matters
 ```
 
 Research decisions live in [docs/research/](docs/research); the throwaway code

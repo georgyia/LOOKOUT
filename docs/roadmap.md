@@ -50,6 +50,7 @@
 - [x] Run record with provenance and coverage
 - [x] Degradation and distribution diagnostics
 - [x] Evaluation harness
+- [x] Run comparison
 - [x] Baselines, calibration, and a synthetic ground-truth fixture
 
 ## Phase 6 — research extensions
