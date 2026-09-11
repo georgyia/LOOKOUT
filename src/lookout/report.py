@@ -343,6 +343,26 @@ def render_markdown(record: RunRecord, events: list[GazeEvent]) -> str:
             out.append(f"- Limiting confidence factor: {factors}")
         out.append("")
 
+    timing = record.timing
+    if timing and timing.stages:
+        out += ["## Cost", ""]
+        out.append(
+            f"- {timing.wall_seconds:.1f}s of wall time for "
+            f"{timing.video_seconds:.1f}s of video "
+            f"({timing.realtime_factor:.2f}x realtime)"
+        )
+        hour = timing.projected_seconds(3600.0)
+        if hour:
+            out.append(f"- An hour of recording projects to {hour / 60.0:.0f} minutes")
+        out += ["", "| Stage | Seconds | Calls | Share |", "| --- | ---: | ---: | ---: |"]
+        total = sum(stage.seconds for stage in timing.stages)
+        for stage in timing.stages:
+            out.append(
+                f"| {stage.stage} | {stage.seconds:.2f} | {stage.calls} "
+                f"| {stage.share_of(total):.1%} |"
+            )
+        out.append("")
+
     out += ["## Evaluation", ""]
     if record.evaluation is None:
         out += ["Not measured. No ground truth was supplied for this recording.", ""]
@@ -549,6 +569,38 @@ def render_html(record: RunRecord, events: list[GazeEvent]) -> str:
                 f'<p class="disclaimer">Dashed outline marks the central ninth of the '
                 f"screen.</p>"
             )
+
+    timing = record.timing
+    if timing and timing.stages:
+        total = sum(stage.seconds for stage in timing.stages)
+        parts.append("<h2>Cost</h2><dl>")
+        parts.append(
+            f"<dt>Throughput</dt><dd>{timing.realtime_factor:.2f}x realtime "
+            f"({timing.wall_seconds:.1f}s for {timing.video_seconds:.1f}s of video)</dd>"
+        )
+        hour = timing.projected_seconds(3600.0)
+        if hour:
+            parts.append(f"<dt>An hour projects to</dt><dd>{hour / 60.0:.0f} minutes</dd>")
+        parts.append("</dl>")
+        parts.append('<div class="wrap"><table>')
+        parts.append(
+            '<tr><th>Stage</th><th class="n">Seconds</th><th class="n">Calls</th>'
+            '<th class="track"></th><th class="n">Share</th></tr>'
+        )
+        for stage in timing.stages:
+            share = stage.share_of(total)
+            parts.append(
+                f"<tr><td>{_esc(stage.stage)}</td>"
+                f"<td class='n'>{stage.seconds:.2f}</td>"
+                f"<td class='n'>{stage.calls}</td>"
+                f"<td class='track'><div class='bar' style='width:{100 * share:.1f}%'></div></td>"
+                f"<td class='n'>{share:.1%}</td></tr>"
+            )
+        parts.append("</table></div>")
+        parts.append(
+            '<p class="disclaimer">Cost is a property of this machine and '
+            "configuration, not a measure of result quality.</p>"
+        )
 
     parts.append("<h2>Evaluation</h2>")
     if record.evaluation is None:

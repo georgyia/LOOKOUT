@@ -97,7 +97,7 @@ def test_coverage_counts_what_could_not_be_seen(tmp_path: Path) -> None:
     store.write_gaze(out / GAZE_RAW, scripted_directions(layout, cues, fps=5.0))
     artifacts.write_layouts(out / LAYOUT, [layout])
 
-    coverage, _ = attribute(out, CONFIG)
+    coverage = attribute(out, CONFIG).coverage
 
     assert coverage.not_visible == 3
     per_participant = {e.participant_id: e for e in coverage.per_participant}

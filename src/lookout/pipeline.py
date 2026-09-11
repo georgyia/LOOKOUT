@@ -41,10 +41,12 @@ from .models import (
 from .screen_mapping import ScreenMappingParams, map_direction
 from .speaker import SpeakerSegment, aggregate_speaker_segments, detect_highlighted_tile
 from .temporal import detect_fixations, median_smooth
+from .timing import RunTiming, Stopwatch
 
 __all__ = [
     "AnalysisConfig",
     "CalibrationReport",
+    "RunOutcome",
     "GazeStage",
     "geometric_stage",
     "appearance_stage",
@@ -123,6 +125,16 @@ def appearance_stage(
         )
 
     return stage
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    """Everything a run produced about itself: what survived, what was fit, and
+    what it cost."""
+
+    coverage: Coverage
+    calibrations: tuple[CalibrationReport, ...] = ()
+    timing: RunTiming = field(default_factory=RunTiming)
 
 
 @dataclass(frozen=True)
@@ -234,24 +246,29 @@ def analyze(
     gaze_stage: GazeStage,
     config: AnalysisConfig | None = None,
     viewer_layouts: list[Layout] | None = None,
-) -> tuple[Coverage, tuple[CalibrationReport, ...]]:
+) -> RunOutcome:
     """Run observation and attribution end to end, writing artifacts to ``out_dir``."""
 
     config = config or AnalysisConfig()
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    watch = Stopwatch()
 
-    frames = list(read_video(video, config.target_fps))
-    per_frame_tiles = [
-        (frame.timestamp, detect_tiles(frame.image, config.detection)) for frame in frames
-    ]
+    with watch.stage("decode"):
+        frames = list(read_video(video, config.target_fps))
 
-    intervals = segment_layouts(per_frame_tiles, min_stable_seconds=2.0 / config.target_fps)
-    recording_layouts = build_layouts(
-        intervals,
-        viewer_id=RECORDING_VIEWER,
-        source=LayoutSource.RECORDING,
-    )
+    per_frame_tiles = []
+    for frame in frames:
+        with watch.stage("detect_tiles"):
+            per_frame_tiles.append((frame.timestamp, detect_tiles(frame.image, config.detection)))
+
+    with watch.stage("segment_layouts"):
+        intervals = segment_layouts(per_frame_tiles, min_stable_seconds=2.0 / config.target_fps)
+        recording_layouts = build_layouts(
+            intervals,
+            viewer_id=RECORDING_VIEWER,
+            source=LayoutSource.RECORDING,
+        )
 
     directions: list[GazeDirection] = []
     # (attempts, hits) per participant: a tile the observer never resolved a
@@ -275,7 +292,8 @@ def analyze(
             continue
 
         regions = layout.participant_regions()
-        highlighted = detect_highlighted_tile(frame.image, tiles_at.get(frame.timestamp, ()))
+        with watch.stage("speaker_cue"):
+            highlighted = detect_highlighted_tile(frame.image, tiles_at.get(frame.timestamp, ()))
         if highlighted is not None and highlighted < len(regions):
             speaker_id = regions[highlighted].participant_id
             if speaker_id is not None:
@@ -286,7 +304,8 @@ def analyze(
         for region in regions:
             assert region.participant_id is not None
             crop = _crop_region(frame.image, region)
-            observation = gaze_stage(crop, region.participant_id, frame.timestamp)
+            with watch.stage("observe_gaze"):
+                observation = gaze_stage(crop, region.participant_id, frame.timestamp)
             attempts, hits = faces.get(region.participant_id, (0, 0))
             faces[region.participant_id] = (attempts + 1, hits + (observation is not None))
             if observation is not None:
@@ -299,16 +318,20 @@ def analyze(
         aggregate_speaker_segments(speaking, cue="highlight", max_gap=2.0 * frame_step),
     )
 
-    coverage, calibrations = attribute(out, config, viewer_layouts)
-    return (
-        coverage.with_observation(
+    with watch.stage("attribute"):
+        attributed = attribute(out, config, viewer_layouts)
+
+    video_seconds = max((f.timestamp for f in frames), default=0.0)
+    return RunOutcome(
+        coverage=attributed.coverage.with_observation(
             frames=len(frames),
             layouts=len(recording_layouts),
             layout_changes=max(0, len(recording_layouts) - 1),
             participants_detected=len(participants),
             faces_per_participant=faces,
         ),
-        calibrations,
+        calibrations=attributed.calibrations,
+        timing=watch.result(video_seconds=video_seconds),
     )
 
 
@@ -330,7 +353,7 @@ def attribute(
     config: AnalysisConfig | None = None,
     viewer_layouts: list[Layout] | None = None,
     calibrate: bool = False,
-) -> tuple[Coverage, tuple[CalibrationReport, ...]]:
+) -> RunOutcome:
     """Re-run mapping, attribution, and events from the stored raw gaze.
 
     ``viewer_layouts`` optionally supplies per-viewer layouts (e.g. from a
@@ -487,4 +510,4 @@ def attribute(
         layout_sources=tuple(sorted(sources)),
         per_participant=tuple(per_participant),
     )
-    return coverage, tuple(calibrations)
+    return RunOutcome(coverage=coverage, calibrations=tuple(calibrations))
