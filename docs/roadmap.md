@@ -64,6 +64,6 @@
 - [ ] GPU/MPS acceleration
 - [ ] Batch processing
 - [ ] Model caching
-- [ ] Benchmarks
+- [x] Benchmarks
 
 Live meeting integrations are intentionally later.

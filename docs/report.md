@@ -122,6 +122,15 @@ them evenly spread, when collapsing the field is itself the symptom.
 Concentration excludes non-participant outcomes. A run that is mostly `unknown`
 is not concentrated, it is empty, and coverage already says so.
 
+### `timing`
+
+What the run cost, per stage, with call counts and shares. Reported as a
+realtime multiple and a projection, because that is the form the question takes.
+
+Timing sits with provenance, not with results: cost is a property of the machine
+and the configuration, not a measure of quality. Nothing about a fast run makes
+it more credible. See [research note 16](research/16-run-cost.md).
+
 ### `evaluation`
 
 `null` when the run was never scored. The report's headline turns on this: an
