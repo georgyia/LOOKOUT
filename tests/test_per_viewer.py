@@ -79,7 +79,7 @@ def test_a_manifest_replaces_the_shared_layout_assumption(tmp_path: Path) -> Non
     ]
     _write_run(out, directions, recording)
 
-    assumed, _ = attribute(out, CONFIG)
+    assumed = attribute(out, CONFIG).coverage
     (assumed_event,) = _events_for(out, "bob")
     assert assumed_event.target == "alice"
     assert assumed.layout_sources == ("assumed_shared",)
@@ -94,7 +94,7 @@ def test_a_manifest_replaces_the_shared_layout_assumption(tmp_path: Path) -> Non
         0.0,
         LayoutSource.MANIFEST,
     )
-    known, _ = attribute(out, CONFIG, [bob])
+    known = attribute(out, CONFIG, [bob]).coverage
     (known_event,) = _events_for(out, "bob")
     assert known_event.target == "carol"
     assert known.layout_sources == ("manifest",)
@@ -172,10 +172,10 @@ def test_calibration_reports_which_viewers_were_fit(tmp_path: Path) -> None:
 
     out, _ = _speaker_run(tmp_path, ScreenMappingParams())
 
-    _, none = attribute(out, CONFIG, calibrate=False)
+    none = attribute(out, CONFIG, calibrate=False).calibrations
     assert none == ()
 
-    _, (report,) = attribute(out, CONFIG, calibrate=True)
+    (report,) = attribute(out, CONFIG, calibrate=True).calibrations
     assert report.viewer_id == "slot_0"
     assert report.calibrated is True
     assert report.labels >= CONFIG.min_calibration_labels
@@ -197,7 +197,7 @@ def test_calibration_falls_back_rather_than_fitting_badly(tmp_path: Path) -> Non
     out, _ = _speaker_run(tmp_path, ScreenMappingParams())
     artifacts.write_speaker_segments(out / SPEAKER, [])
 
-    _, (report,) = attribute(out, CONFIG, calibrate=True)
+    (report,) = attribute(out, CONFIG, calibrate=True).calibrations
     assert report.calibrated is False
     assert report.reason == "no speaker segments"
 
@@ -213,7 +213,7 @@ def test_too_few_labels_keeps_the_prior(tmp_path: Path) -> None:
     strict = AnalysisConfig(
         min_fixation=0.3, max_gap=0.4, event_min_duration=0.4, min_calibration_labels=500
     )
-    _, (report,) = attribute(out, strict, calibrate=True)
+    (report,) = attribute(out, strict, calibrate=True).calibrations
     assert report.calibrated is False
     assert report.reason == "too few weak labels"
 

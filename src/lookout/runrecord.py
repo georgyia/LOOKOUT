@@ -25,6 +25,7 @@ from typing import Any
 from .coverage import Coverage, Degradation, ParticipantCoverage
 from .diagnostics import Diagnostics
 from .pipeline import AnalysisConfig
+from .timing import RunTiming, StageTiming
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -34,6 +35,7 @@ __all__ = [
     "Provenance",
     "RunRecord",
     "coverage_to_dict",
+    "timing_to_dict",
     "describe_config",
     "config_hash",
     "file_digest",
@@ -122,6 +124,7 @@ class RunRecord:
     config_overrides: tuple[str, ...] = ()
     coverage: Coverage | None = None
     diagnostics: Diagnostics | None = None
+    timing: RunTiming | None = None
     evaluation: dict[str, Any] | None = None
     """Scores against ground truth, or ``None`` when the run was never scored.
 
@@ -274,6 +277,7 @@ def build_record(
     *,
     coverage: Coverage | None = None,
     diagnostics: Diagnostics | None = None,
+    timing: RunTiming | None = None,
     evaluation: dict[str, Any] | None = None,
     degradations: tuple[Degradation, ...] = (),
     video: str | Path | None = None,
@@ -296,6 +300,7 @@ def build_record(
         config_overrides=overrides,
         coverage=coverage,
         diagnostics=diagnostics,
+        timing=timing,
         evaluation=evaluation,
         degradations=degradations,
         results=results,
@@ -336,6 +341,45 @@ def _coverage_from_dict(data: dict[str, Any]) -> Coverage:
     )
 
 
+def timing_to_dict(timing: RunTiming) -> dict[str, Any]:
+    """Serialize timing with the derived figures a reader actually uses.
+
+    Throughput as a realtime multiple answers "how long will a 43-minute
+    recording take"; a list of per-stage seconds does not.
+    """
+
+    total = sum(stage.seconds for stage in timing.stages)
+    return {
+        "wall_seconds": timing.wall_seconds,
+        "video_seconds": timing.video_seconds,
+        "realtime_factor": round(timing.realtime_factor, 4),
+        "stages": [
+            {
+                "stage": stage.stage,
+                "seconds": stage.seconds,
+                "calls": stage.calls,
+                "share": round(stage.share_of(total), 4),
+            }
+            for stage in timing.stages
+        ],
+    }
+
+
+def _timing_from_dict(data: dict[str, Any]) -> RunTiming:
+    return RunTiming(
+        stages=tuple(
+            StageTiming(
+                stage=str(row["stage"]),
+                seconds=float(row["seconds"]),
+                calls=int(row["calls"]),
+            )
+            for row in data.get("stages", ())
+        ),
+        wall_seconds=float(data.get("wall_seconds", 0.0)),
+        video_seconds=float(data.get("video_seconds", 0.0)),
+    )
+
+
 def _diagnostics_from_dict(data: dict[str, Any]) -> Diagnostics:
     known = {f.name for f in fields(Diagnostics)}
     payload = {key: value for key, value in data.items() if key in known}
@@ -357,6 +401,7 @@ def to_dict(record: RunRecord) -> dict[str, Any]:
         "config_overrides": list(record.config_overrides),
         "coverage": coverage_to_dict(record.coverage) if record.coverage else None,
         "diagnostics": _plain(record.diagnostics) if record.diagnostics else None,
+        "timing": timing_to_dict(record.timing) if record.timing else None,
         "evaluation": record.evaluation,
         "degradations": [asdict(d) for d in record.degradations],
         "results": record.results,
@@ -379,12 +424,14 @@ def from_dict(data: dict[str, Any]) -> RunRecord:
     )
     coverage = data.get("coverage")
     diagnostics = data.get("diagnostics")
+    timing = data.get("timing")
     return RunRecord(
         provenance=provenance,
         config=data.get("config", {}),
         config_overrides=tuple(data.get("config_overrides", ())),
         coverage=_coverage_from_dict(coverage) if coverage else None,
         diagnostics=_diagnostics_from_dict(diagnostics) if diagnostics else None,
+        timing=_timing_from_dict(timing) if timing else None,
         evaluation=data.get("evaluation"),
         degradations=tuple(Degradation(**d) for d in data.get("degradations", ())),
         results=data.get("results", {}),

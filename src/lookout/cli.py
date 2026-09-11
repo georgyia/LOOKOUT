@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import artifacts, report, runrecord, store
-from .coverage import Coverage, Degradation, detect_degradations
+from .coverage import Degradation, detect_degradations
 from .diagnostics import build_diagnostics, distribution_warnings
 from .evaluate import EvaluationResult, evaluate, load_truth
 from .manifest import load_manifest
@@ -27,6 +27,7 @@ from .pipeline import (
     GAZE_SCREEN,
     AnalysisConfig,
     CalibrationReport,
+    RunOutcome,
     analyze,
     appearance_stage,
     attribute,
@@ -57,8 +58,7 @@ def _adapter(role: str, implementation: str, model: str | None, library: str) ->
 def _write_reports(
     out: Path,
     config: AnalysisConfig,
-    coverage: Coverage,
-    calibrations: tuple[CalibrationReport, ...] = (),
+    outcome: RunOutcome,
     *,
     video: str | None = None,
     adapters: tuple[AdapterInfo, ...] = (),
@@ -71,6 +71,8 @@ def _write_reports(
     observations no longer being recomputed.
     """
 
+    coverage = outcome.coverage
+    calibrations = outcome.calibrations
     events = artifacts.read_events(out / EVENTS)
     results: dict[str, Any] = dict(report.summarize(events))
 
@@ -102,6 +104,7 @@ def _write_reports(
         results,
         coverage=coverage,
         diagnostics=diagnostics,
+        timing=outcome.timing,
         degradations=detect_degradations(coverage) + warnings,
         video=video,
         adapters=adapters,
@@ -189,12 +192,11 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
 
     config = AnalysisConfig(target_fps=args.fps)
     layouts = load_manifest(args.manifest) if args.manifest else None
-    coverage, calibrations = analyze(args.video, args.out, stage, config, layouts)
+    outcome = analyze(args.video, args.out, stage, config, layouts)
     record = _write_reports(
         Path(args.out),
         config,
-        coverage,
-        calibrations,
+        outcome,
         video=args.video,
         adapters=tuple(adapters),
     )
@@ -206,10 +208,8 @@ def _cmd_attribute(args: argparse.Namespace) -> None:
     existing = _read_existing(out)
     config = AnalysisConfig()
     layouts = load_manifest(args.manifest) if args.manifest else None
-    coverage, calibrations = attribute(out, config, layouts, calibrate=args.calibrate)
-    record = _write_reports(
-        out, config, coverage, calibrations, provenance_from=existing
-    )
+    outcome = attribute(out, config, layouts, calibrate=args.calibrate)
+    record = _write_reports(out, config, outcome, provenance_from=existing)
     _print_summary(record)
 
 
