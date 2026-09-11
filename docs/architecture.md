@@ -49,6 +49,19 @@ and propagates the source into every result.
 Together these support reprocessing, changing layouts, uncertainty, and
 alternative attribution algorithms. See research note 01 for the rationale.
 
+## Layout detection
+
+Two strategies, tried in order. The first treats a gallery as tiles drawn on a
+near-uniform background and takes connected foreground components; it handles
+gutters and separates shared content from participants. When tiles abut there
+are no gutters and that collapses to one component, so the fallback recovers the
+grid from its structure — the steps that recur along nearly every line of the
+frame. See [research note 15](research/15-abutting-grids.md).
+
+Neither strategy invents a layout. A frame that looks like content rather than a
+grid yields no tiles, because an invented layout misattributes every subsequent
+gaze while no layout attributes none.
+
 ## Reporting
 
 Reporting is a stage over a single document, not a second summary computed from

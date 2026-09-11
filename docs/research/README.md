@@ -47,3 +47,4 @@ numbers over paragraphs.
 - `12-run-report.md` — what a run report must contain (#27)
 - `13-eval-v2.md` — making a hit rate readable (#30)
 - `14-per-viewer-accuracy.md` — replacing assumptions with facts (#35)
+- `15-abutting-grids.md` — detecting galleries without gutters (#38)
