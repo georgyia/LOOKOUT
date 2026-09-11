@@ -49,6 +49,8 @@ class ParticipantCoverage:
     fixations: int = 0
     attributions: int = 0
     events: int = 0
+    not_visible: int = 0
+    """Windows in which this participant was present but unobservable."""
 
     def __post_init__(self) -> None:
         if not self.participant_id:
@@ -63,6 +65,7 @@ class ParticipantCoverage:
                 "fixations": self.fixations,
                 "attributions": self.attributions,
                 "events": self.events,
+                "not_visible": self.not_visible,
             }
         )
         if self.face_hits > self.face_attempts:
@@ -71,6 +74,12 @@ class ParticipantCoverage:
     @property
     def face_hit_rate(self) -> float:
         return self.face_hits / self.face_attempts if self.face_attempts else 0.0
+
+    @property
+    def observed(self) -> bool:
+        """Whether anything was ever resolved for this participant."""
+
+        return self.face_hits > 0
 
 
 @dataclass(frozen=True)
@@ -95,6 +104,7 @@ class Coverage:
     fixations: int = 0
     attributions: int = 0
     events: int = 0
+    not_visible: int = 0
     layout_sources: tuple[str, ...] = ()
     per_participant: tuple[ParticipantCoverage, ...] = field(default_factory=tuple)
 
@@ -113,6 +123,7 @@ class Coverage:
                 "fixations": self.fixations,
                 "attributions": self.attributions,
                 "events": self.events,
+                "not_visible": self.not_visible,
             }
         )
         if self.face_hits > self.face_attempts:
@@ -160,6 +171,7 @@ class Coverage:
                 fixations=attributed.get(participant, empty).fixations,
                 attributions=attributed.get(participant, empty).attributions,
                 events=attributed.get(participant, empty).events,
+                not_visible=attributed.get(participant, empty).not_visible,
             )
             for participant in sorted(set(attributed) | set(faces_per_participant))
         )
@@ -176,6 +188,7 @@ class Coverage:
             fixations=self.fixations,
             attributions=self.attributions,
             events=self.events,
+            not_visible=self.not_visible,
             layout_sources=self.layout_sources,
             per_participant=merged,
         )

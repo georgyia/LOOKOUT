@@ -178,6 +178,49 @@ def _crop_region(image: Image, region: Region) -> Image:
     return image[y0:y1, x0:x1]
 
 
+def _unobservable_windows(
+    layouts: list[Layout],
+    events: list[GazeEvent],
+    horizon: float,
+    source: LayoutSource | None = None,
+) -> list[GazeEvent]:
+    """Windows where a participant was on screen but nothing was resolved.
+
+    Absence of a result reads as absence of a person. These say the difference
+    out loud: the participant had a tile, and the pipeline could not see them.
+    """
+
+    produced = [(e.viewer_id, e.start_time, e.end_time) for e in events]
+    unseen: list[GazeEvent] = []
+
+    for layout in layouts:
+        start = layout.start_time
+        end = layout.end_time if layout.end_time is not None else horizon
+        if end <= start:
+            continue
+        for region in layout.participant_regions():
+            participant = region.participant_id
+            assert participant is not None
+            covered = any(
+                viewer == participant and event_end > start and event_start < end
+                for viewer, event_start, event_end in produced
+            )
+            if covered:
+                continue
+            unseen.append(
+                GazeEvent(
+                    viewer_id=participant,
+                    target=GazeTarget.NOT_VISIBLE.value,
+                    start_time=start,
+                    end_time=end,
+                    confidence=1.0,
+                    layout_source=source or layout.source,
+                    reason="no usable observation",
+                )
+            )
+    return unseen
+
+
 def _active(layouts: list[Layout], timestamp: float) -> Layout | None:
     for layout in layouts:
         if layout.active_at(timestamp):
@@ -394,6 +437,41 @@ def attribute(
             )
         )
 
+    # A participant who was on screen but never resolved has, until now, simply
+    # been missing from the output — indistinguishable from one who was not in
+    # the call at all. Say so instead.
+    unseen = _unobservable_windows(
+        recording_layouts if recording_layouts is not None else (viewer_layouts or []),
+        all_events,
+        horizon=max((d.timestamp for d in directions), default=0.0),
+        # A recording layout is applied to each viewer as assumed_shared, so the
+        # result must carry that provenance rather than the layout's own.
+        source=LayoutSource.ASSUMED_SHARED if recording_layouts is not None else None,
+    )
+    all_events.extend(unseen)
+    unseen_by_viewer: dict[str, int] = {}
+    for event in unseen:
+        unseen_by_viewer[event.viewer_id] = unseen_by_viewer.get(event.viewer_id, 0) + 1
+
+    seen = {entry.participant_id for entry in per_participant}
+    per_participant = [
+        ParticipantCoverage(
+            participant_id=entry.participant_id,
+            directions=entry.directions,
+            points=entry.points,
+            off_screen=entry.off_screen,
+            fixations=entry.fixations,
+            attributions=entry.attributions,
+            events=entry.events,
+            not_visible=unseen_by_viewer.get(entry.participant_id, 0),
+        )
+        for entry in per_participant
+    ] + [
+        ParticipantCoverage(participant_id=viewer, not_visible=count)
+        for viewer, count in sorted(unseen_by_viewer.items())
+        if viewer not in seen
+    ]
+
     artifacts.write_points(out / GAZE_SCREEN, all_points)
     artifacts.write_attributions(out / ATTRIBUTION, all_rows)
     artifacts.write_events(out / EVENTS, all_events)
@@ -405,6 +483,7 @@ def attribute(
         fixations=sum(entry.fixations for entry in per_participant),
         attributions=len(all_rows),
         events=len(all_events),
+        not_visible=len(unseen),
         layout_sources=tuple(sorted(sources)),
         per_participant=tuple(per_participant),
     )
