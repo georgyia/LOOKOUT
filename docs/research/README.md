@@ -50,3 +50,4 @@ numbers over paragraphs.
 - `15-abutting-grids.md` — detecting galleries without gutters (#38)
 - `16-run-cost.md` — what a run costs, and how to guard it (#42)
 - `17-streaming.md` — bounding memory instead of recording length (#46)
+- `18-screen-share.md` — describing a screen share rather than declining it (#48)

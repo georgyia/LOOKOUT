@@ -67,7 +67,12 @@ are no gutters and that collapses to one component, so the fallback recovers the
 grid from its structure — the steps that recur along nearly every line of the
 frame. See [research note 15](research/15-abutting-grids.md).
 
-Neither strategy invents a layout. A frame that looks like content rather than a
+A third handles the layout a call takes when someone shares their screen: one
+dominant content region with a column of small participant tiles down an edge,
+found by the same recurrence test applied to a narrow band. See
+[research note 18](research/18-screen-share.md).
+
+None of the strategies invents a layout. A frame that looks like content rather than a
 grid yields no tiles, because an invented layout misattributes every subsequent
 gaze while no layout attributes none.
 

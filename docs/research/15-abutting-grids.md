@@ -88,10 +88,9 @@ pinned by a test:
 
 ## Risks
 
-- Screen-share-with-filmstrip is now *detected as absent* rather than
-  misattributed, which is correct but not useful. Those small tiles are real
-  participants and a later change should find them; the roadmap's hidden and
-  not-visible participants item is the place for it.
+- Screen-share-with-filmstrip was, on this change alone, *detected as absent*
+  rather than misattributed: correct but not useful, since those small tiles are
+  real participants. Addressed in [note 18](18-screen-share.md).
 - A gallery with genuinely unequal cells — some clients enlarge the active
   speaker — is rejected by the uniformity check. This is a deliberate trade: the
   alternative accepts content as a grid.
