@@ -474,8 +474,33 @@ def detect_tiles(image: Image, params: DetectionParams | None = None) -> tuple[T
         if shared:
             return shared
 
-    tiles.sort(key=lambda t: (round(t.y, 2), round(t.x, 2)))
-    return tuple(tiles)
+    return _reading_order(tiles)
+
+
+def _reading_order(tiles: list[Tile]) -> tuple[Tile, ...]:
+    """Sort top-to-bottom, then left-to-right, grouping tiles into rows first.
+
+    Sorting on the rounded ``y`` alone is not reading order: two tiles in the
+    same row detected a pixel apart order by ``y`` rather than by ``x``, so the
+    bottom-right tile can precede the bottom-left one. Slot numbering then
+    depends on pixel noise, and changes between frames of an unchanging layout.
+    """
+
+    if not tiles:
+        return ()
+
+    ordered = sorted(tiles, key=lambda t: t.y)
+    heights = sorted(t.height for t in ordered)
+    tolerance = heights[len(heights) // 2] / 2.0
+
+    rows: list[list[Tile]] = [[ordered[0]]]
+    for tile in ordered[1:]:
+        if tile.y - rows[-1][0].y <= tolerance:
+            rows[-1].append(tile)
+        else:
+            rows.append([tile])
+
+    return tuple(tile for row in rows for tile in sorted(row, key=lambda t: t.x))
 
 
 def _signature(tiles: Iterable[Tile]) -> tuple[tuple[str, int, int, int, int], ...]:
