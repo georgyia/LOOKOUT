@@ -109,5 +109,6 @@ magnitude.
 - The complexity assertions pin current call counts. Legitimate changes — batching
   observations, caching decoded frames — will change them, and the tests will
   need updating rather than silencing.
-- Nothing here measures memory. A long recording holds all sampled frames in
-  memory before observation begins, which is a limit these timings do not expose.
+- Memory was not measured here, and it turned out to be the binding limit rather
+  than time: holding all sampled frames capped recording length at roughly 16 GB
+  for this file. Measured and removed in [note 17](17-streaming.md).

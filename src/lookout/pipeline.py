@@ -13,7 +13,7 @@ is :mod:`lookout.runrecord`'s job.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,11 +23,11 @@ from .calibration import calibrate_mapping, weak_labels_from_speaker
 from .coverage import Coverage, ParticipantCoverage
 from .events import aggregate_events
 from .face import FaceObserver
-from .frames import Image, read_video
+from .frames import Frame, Image, read_video
 from .gaze_appearance import GazeEstimator, appearance_gaze
 from .gaze_geometric import GeometricGazeParams, estimate_gaze
 from .identity import build_layouts
-from .layout import DetectionParams, detect_tiles, segment_layouts
+from .layout import DetectionParams, Tile, detect_tiles, segment_layouts
 from .models import (
     Attribution,
     GazeDirection,
@@ -190,6 +190,21 @@ def _crop_region(image: Image, region: Region) -> Image:
     return image[y0:y1, x0:x1]
 
 
+def _timed(frames: Iterator[Frame], watch: Stopwatch, stage: str) -> Iterator[Frame]:
+    """Yield frames one at a time, charging decode time to ``stage``.
+
+    Wrapping the iterator rather than draining it is the whole point: the caller
+    never holds more than the frame it is working on.
+    """
+
+    while True:
+        with watch.stage(stage):
+            frame = next(frames, None)
+        if frame is None:
+            return
+        yield frame
+
+
 def _unobservable_windows(
     layouts: list[Layout],
     events: list[GazeEvent],
@@ -254,11 +269,18 @@ def analyze(
     out.mkdir(parents=True, exist_ok=True)
     watch = Stopwatch()
 
-    with watch.stage("decode"):
-        frames = list(read_video(video, config.target_fps))
-
-    per_frame_tiles = []
-    for frame in frames:
+    # Two passes over the video, holding one frame at a time. Materializing the
+    # sampled frames instead would make peak memory scale with recording length:
+    # at 5 fps a 43-minute 854x480 call is about 16 GB of held frames, and the
+    # failure when that ceiling arrives is an allocation error rather than a
+    # degradation. Decoding is around a tenth of the cost of detection, so the
+    # second pass is the cheaper side of that trade by a wide margin.
+    frame_count = 0
+    video_seconds = 0.0
+    per_frame_tiles: list[tuple[float, tuple[Tile, ...]]] = []
+    for frame in _timed(read_video(video, config.target_fps), watch, "decode"):
+        frame_count += 1
+        video_seconds = max(video_seconds, frame.timestamp)
         with watch.stage("detect_tiles"):
             per_frame_tiles.append((frame.timestamp, detect_tiles(frame.image, config.detection)))
 
@@ -286,7 +308,7 @@ def analyze(
             participants.add(region.participant_id)
 
     tiles_at = dict(per_frame_tiles)
-    for frame in frames:
+    for frame in _timed(read_video(video, config.target_fps), watch, "decode"):
         layout = _active(recording_layouts, frame.timestamp)
         if layout is None:
             continue
@@ -321,10 +343,9 @@ def analyze(
     with watch.stage("attribute"):
         attributed = attribute(out, config, viewer_layouts)
 
-    video_seconds = max((f.timestamp for f in frames), default=0.0)
     return RunOutcome(
         coverage=attributed.coverage.with_observation(
-            frames=len(frames),
+            frames=frame_count,
             layouts=len(recording_layouts),
             layout_changes=max(0, len(recording_layouts) - 1),
             participants_detected=len(participants),

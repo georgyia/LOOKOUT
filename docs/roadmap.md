@@ -63,6 +63,7 @@
 ## Phase 7 — optimization
 
 - [ ] GPU/MPS acceleration
+- [x] Bounded memory (streaming)
 - [ ] Batch processing
 - [ ] Model caching
 - [x] Benchmarks
