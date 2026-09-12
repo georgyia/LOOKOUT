@@ -49,6 +49,15 @@ and propagates the source into every result.
 Together these support reprocessing, changing layouts, uncertainty, and
 alternative attribution algorithms. See research note 01 for the rationale.
 
+## Frame handling
+
+The pipeline streams: one decoded frame is held at a time, and the video is
+decoded twice — once to detect tiles, once to crop and observe. The second pass
+needs only the first pass's geometry, not its pixels. Holding the sampled frames
+instead would make peak memory scale with recording length, which capped how
+long a recording could be analyzed at all. See
+[research note 17](research/17-streaming.md).
+
 ## Layout detection
 
 Two strategies, tried in order. The first treats a gallery as tiles drawn on a

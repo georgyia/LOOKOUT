@@ -49,3 +49,4 @@ numbers over paragraphs.
 - `14-per-viewer-accuracy.md` — replacing assumptions with facts (#35)
 - `15-abutting-grids.md` — detecting galleries without gutters (#38)
 - `16-run-cost.md` — what a run costs, and how to guard it (#42)
+- `17-streaming.md` — bounding memory instead of recording length (#46)
