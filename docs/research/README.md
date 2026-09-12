@@ -51,3 +51,4 @@ numbers over paragraphs.
 - `16-run-cost.md` — what a run costs, and how to guard it (#42)
 - `17-streaming.md` — bounding memory instead of recording length (#46)
 - `18-screen-share.md` — describing a screen share rather than declining it (#48)
+- `19-identity-continuity.md` — identity across a layout change (#50)

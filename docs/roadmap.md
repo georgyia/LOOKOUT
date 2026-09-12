@@ -15,6 +15,7 @@
 - [x] Timestamp management
 - [x] Participant (tile) detection
 - [x] Slot persistence and optional name linking
+- [x] Identity continuity across layout changes
 
 ## Phase 2 — layout
 

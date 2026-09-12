@@ -91,6 +91,19 @@ so that a low confidence can be acted on rather than only noticed.
   event's duration. Without it a report knows an event was uncertain but not
   whether the gaze missed every region, fell between two, or sat on a border.
 
+## Identity
+
+Participant ids are reading-order slots within a layout interval. Across
+intervals an id is carried only where geometry supports it — a tile in nearly
+the same place — and fresh ids are minted otherwise, so an id never means two
+different people within a run. **IdentityBreak** records where identity was
+carried and where it was not.
+
+A participant present throughout a call therefore appears as two people either
+side of a screen share. That is honest rather than correct: nothing available
+without a name label or a biometric comparison links them. See
+[research note 19](research/19-identity-continuity.md).
+
 ## Run observability
 
 - **Coverage** / **ParticipantCoverage** — the per-stage funnel, validated on
