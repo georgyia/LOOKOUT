@@ -90,11 +90,13 @@ def test_timing_serializes_the_figures_a_reader_uses() -> None:
 # ------------------------------------------------- work, not wall clock
 
 
-def test_decoding_happens_once_per_frame_not_once_per_tile(tmp_path: Path) -> None:
+def test_decoding_is_per_frame_not_per_tile(tmp_path: Path) -> None:
     """The regression that matters: a stage moving inside a per-tile loop.
 
     Wall clock would catch it only on a quiet machine; call counts catch it
-    anywhere."""
+    anywhere. Frames are streamed in two passes, so decode is charged once per
+    frame per pass — and must stay independent of how many tiles each frame
+    holds."""
 
     video = tmp_path / "clip.avi"
     _write_video(video, frames=30, fps=30)
@@ -102,7 +104,11 @@ def test_decoding_happens_once_per_frame_not_once_per_tile(tmp_path: Path) -> No
 
     calls = {s.stage: s.calls for s in outcome.timing.stages}
     frames = outcome.coverage.frames
-    assert calls["decode"] == 1
+    tiles_per_frame = outcome.coverage.face_attempts / frames
+    assert tiles_per_frame > 1  # otherwise this proves nothing
+
+    # Two passes, each yielding every frame plus one final exhausted next().
+    assert calls["decode"] == 2 * (frames + 1)
     assert calls["detect_tiles"] == frames
     assert calls["segment_layouts"] == 1
     assert calls["attribute"] == 1
