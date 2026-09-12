@@ -24,6 +24,7 @@ from typing import Any
 
 from .coverage import Coverage, Degradation, ParticipantCoverage
 from .diagnostics import Diagnostics
+from .identity import IdentityBreak
 from .pipeline import AnalysisConfig
 from .timing import RunTiming, StageTiming
 
@@ -125,6 +126,7 @@ class RunRecord:
     coverage: Coverage | None = None
     diagnostics: Diagnostics | None = None
     timing: RunTiming | None = None
+    identity_breaks: tuple[IdentityBreak, ...] = ()
     evaluation: dict[str, Any] | None = None
     """Scores against ground truth, or ``None`` when the run was never scored.
 
@@ -278,6 +280,7 @@ def build_record(
     coverage: Coverage | None = None,
     diagnostics: Diagnostics | None = None,
     timing: RunTiming | None = None,
+    identity_breaks: tuple[IdentityBreak, ...] = (),
     evaluation: dict[str, Any] | None = None,
     degradations: tuple[Degradation, ...] = (),
     video: str | Path | None = None,
@@ -301,6 +304,7 @@ def build_record(
         coverage=coverage,
         diagnostics=diagnostics,
         timing=timing,
+        identity_breaks=identity_breaks,
         evaluation=evaluation,
         degradations=degradations,
         results=results,
@@ -402,6 +406,7 @@ def to_dict(record: RunRecord) -> dict[str, Any]:
         "coverage": coverage_to_dict(record.coverage) if record.coverage else None,
         "diagnostics": _plain(record.diagnostics) if record.diagnostics else None,
         "timing": timing_to_dict(record.timing) if record.timing else None,
+        "identity_breaks": [asdict(b) for b in record.identity_breaks],
         "evaluation": record.evaluation,
         "degradations": [asdict(d) for d in record.degradations],
         "results": record.results,
@@ -432,6 +437,15 @@ def from_dict(data: dict[str, Any]) -> RunRecord:
         coverage=_coverage_from_dict(coverage) if coverage else None,
         diagnostics=_diagnostics_from_dict(diagnostics) if diagnostics else None,
         timing=_timing_from_dict(timing) if timing else None,
+        identity_breaks=tuple(
+            IdentityBreak(
+                at_time=float(b["at_time"]),
+                carried=tuple(b.get("carried", ())),
+                introduced=tuple(b.get("introduced", ())),
+                ended=tuple(b.get("ended", ())),
+            )
+            for b in data.get("identity_breaks", ())
+        ),
         evaluation=data.get("evaluation"),
         degradations=tuple(Degradation(**d) for d in data.get("degradations", ())),
         results=data.get("results", {}),

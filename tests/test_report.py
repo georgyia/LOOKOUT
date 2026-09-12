@@ -229,3 +229,81 @@ def test_a_record_with_nothing_in_it_still_renders() -> None:
     bare = RunRecord(provenance=_record().provenance, config={})
     assert "LOOKOUT run report" in render_html(bare, [])
     assert "No events were produced." in render_markdown(bare, [])
+
+
+# ------------------------------------------------------------------- identity
+
+from lookout.identity import IdentityBreak  # noqa: E402
+
+
+def _broken_record(breaks: tuple[IdentityBreak, ...]):
+    events = _events()
+    return build_record(
+        AnalysisConfig(),
+        dict(summarize(events)),
+        coverage=_coverage(),
+        diagnostics=build_diagnostics(events, [], participants=3),
+        identity_breaks=breaks,
+        adapters=(AdapterInfo("gaze", "geometric"),),
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+
+
+def test_a_run_whose_layout_never_changes_renders_as_before() -> None:
+    text = render_markdown(_broken_record(()), _events())
+    assert "## Identity" not in text
+    assert "upper bound" not in text
+
+
+@pytest.mark.parametrize("render", [render_markdown, render_html])
+def test_a_total_break_is_rendered(render) -> None:
+    """Correct arithmetic presented so the obvious reading is wrong would be a
+    worse failure than the wrong arithmetic it replaced."""
+
+    breaks = (
+        IdentityBreak(
+            at_time=150.0,
+            carried=(),
+            introduced=("slot_7", "slot_8"),
+            ended=("slot_0", "slot_1", "slot_2"),
+        ),
+    )
+    text = render(_broken_record(breaks), _events())
+    assert "Identity" in text
+    assert "150" in text
+    assert "nothing" in text
+
+
+def test_a_total_break_makes_the_participant_count_an_upper_bound() -> None:
+    breaks = (
+        IdentityBreak(at_time=150.0, carried=(), introduced=("slot_7",), ended=("slot_0",)),
+    )
+    notes = " ".join(limitations(_broken_record(breaks)))
+    assert "upper bound" in notes
+    assert "150s" in notes
+    assert "appears twice" in notes
+
+
+def test_a_carried_break_does_not_claim_the_count_is_unreliable() -> None:
+    """A change that preserves identity is not a break in it."""
+
+    breaks = (
+        IdentityBreak(
+            at_time=90.0, carried=("alice", "bob"), introduced=("carol",), ended=()
+        ),
+    )
+    record = _broken_record(breaks)
+    notes = " ".join(limitations(record))
+    assert "upper bound" not in notes
+    assert "## Identity" in render_markdown(record, _events())
+
+
+def test_identity_breaks_round_trip_through_the_record(tmp_path: Path) -> None:
+    from lookout.runrecord import read_record, write_record
+
+    breaks = (
+        IdentityBreak(at_time=150.0, carried=("a",), introduced=("b",), ended=("c",)),
+    )
+    path = tmp_path / "report.json"
+    write_record(path, _broken_record(breaks))
+    assert read_record(path).identity_breaks == breaks

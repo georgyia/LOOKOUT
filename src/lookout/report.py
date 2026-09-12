@@ -159,6 +159,17 @@ def limitations(record: RunRecord) -> tuple[str, ...]:
                 "nowhere."
             )
 
+    total_breaks = [b for b in record.identity_breaks if b.total]
+    if total_breaks and coverage:
+        at = ", ".join(f"{b.at_time:.0f}s" for b in total_breaks)
+        found.append(
+            f"The layout changed shape at {at}, and nothing links the tiles before "
+            f"each change to the tiles after. The {len(coverage.per_participant)} "
+            f"participants listed are an upper bound on how many people were "
+            f"present, not a count of them: the same person either side of a "
+            f"change appears twice, and the pipeline cannot tell."
+        )
+
     if record.diagnostics and record.diagnostics.unresolved_share > 0.25:
         found.append(
             f"{record.diagnostics.unresolved_share:.1%} of attributed duration is "
@@ -328,6 +339,20 @@ def render_markdown(record: RunRecord, events: list[GazeEvent]) -> str:
                 f"> {settled.impact}",
                 "",
             ]
+
+    if record.identity_breaks:
+        out += ["## Identity", ""]
+        out.append(
+            "The layout changed during this run. Where it changed shape, nothing "
+            "links the tiles before to the tiles after, so new ids were used."
+        )
+        out += ["", "| At | Carried across | Ended | Introduced |", "| ---: | --- | --- | --- |"]
+        for change in record.identity_breaks:
+            out.append(
+                f"| {change.at_time:.0f}s | {', '.join(change.carried) or 'nothing'} "
+                f"| {len(change.ended)} | {len(change.introduced)} |"
+            )
+        out.append("")
 
     shape = record.diagnostics
     if shape:
@@ -548,6 +573,27 @@ def render_html(record: RunRecord, events: list[GazeEvent]) -> str:
                 f"<div>{_esc(settled.detail)}</div>"
                 f'<p class="impact">{_esc(settled.impact)}</p></div>'
             )
+
+    if record.identity_breaks:
+        parts.append("<h2>Identity</h2>")
+        parts.append(
+            '<p class="disclaimer">The layout changed during this run. Where it '
+            "changed shape, nothing links the tiles before to the tiles after, so "
+            "new ids were used.</p>"
+        )
+        parts.append('<div class="wrap"><table>')
+        parts.append(
+            '<tr><th class="n">At</th><th>Carried across</th>'
+            '<th class="n">Ended</th><th class="n">Introduced</th></tr>'
+        )
+        for change in record.identity_breaks:
+            parts.append(
+                f"<tr><td class='n'>{change.at_time:.0f}s</td>"
+                f"<td>{_esc(', '.join(change.carried) or 'nothing')}</td>"
+                f"<td class='n'>{len(change.ended)}</td>"
+                f"<td class='n'>{len(change.introduced)}</td></tr>"
+            )
+        parts.append("</table></div>")
 
     shape = record.diagnostics
     if shape:
