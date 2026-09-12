@@ -106,6 +106,7 @@ def _write_reports(
         coverage=coverage,
         diagnostics=diagnostics,
         timing=outcome.timing,
+        identity_breaks=outcome.identity_breaks,
         degradations=detect_degradations(coverage) + warnings,
         video=video,
         adapters=adapters,

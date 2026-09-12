@@ -114,6 +114,18 @@ observe it.
 | `centre_clustered_gaze` | Most mapped points land in the central ninth. |
 | `high_self_view` | Viewers looking at their own tile dominate. |
 
+### `identity_breaks`
+
+Where the layout changed, which participant ids carried across it, and which
+ended or began there. An id is carried only where geometry supports it, so a
+change that reshapes the screen carries nothing and the ids either side are
+unrelated.
+
+A run containing any such change reports its participant count as an upper
+bound: the same person either side appears twice, and nothing available without
+a name label or a biometric comparison links them. See
+[research note 19](research/19-identity-continuity.md).
+
 ### `diagnostics`
 
 The shape of the results, independent of whether they are correct. These cannot

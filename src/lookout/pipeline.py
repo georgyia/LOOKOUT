@@ -26,7 +26,7 @@ from .face import FaceObserver
 from .frames import Frame, Image, read_video
 from .gaze_appearance import GazeEstimator, appearance_gaze
 from .gaze_geometric import GeometricGazeParams, estimate_gaze
-from .identity import build_layouts
+from .identity import IdentityBreak, build_layouts, identity_breaks
 from .layout import DetectionParams, Tile, detect_tiles, segment_layouts
 from .models import (
     Attribution,
@@ -135,6 +135,7 @@ class RunOutcome:
     coverage: Coverage
     calibrations: tuple[CalibrationReport, ...] = ()
     timing: RunTiming = field(default_factory=RunTiming)
+    identity_breaks: tuple[IdentityBreak, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -353,6 +354,7 @@ def analyze(
         ),
         calibrations=attributed.calibrations,
         timing=watch.result(video_seconds=video_seconds),
+        identity_breaks=identity_breaks(recording_layouts),
     )
 
 
