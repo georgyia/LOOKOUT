@@ -15,6 +15,11 @@ how consistently a step recurs, rather than how strong it is on average,
 separates the two cleanly — a border scores above 0.9 where in-tile content
 rarely clears 0.1.
 
+A third strategy handles the layout a call takes when someone shares their
+screen: one dominant content region with a column of small participant tiles
+down an edge. The grid detector correctly refuses it, since the cells are
+nothing like equal, so without this a screen share reads as no layout at all.
+
 Detection produces geometry only (:class:`Tile`); identity assignment happens in
 :mod:`lookout.identity`. Segmentation (:func:`segment_layouts`) is pure and turns
 a per-frame tile stream into stable intervals, ignoring brief flicker.
@@ -39,6 +44,7 @@ __all__ = [
     "DetectionParams",
     "detect_tiles",
     "detect_grid",
+    "detect_shared_content",
     "axis_separators",
     "segment_layouts",
 ]
@@ -90,6 +96,12 @@ class DetectionParams:
 
     empty_cell_variation: float = 6.0
     """Below this pixel standard deviation a cell holds no video."""
+
+    filmstrip_max_fraction: float = 0.3
+    """Widest a participant filmstrip may be, as a fraction of the frame."""
+
+    filmstrip_min_fraction: float = 0.05
+    """Narrowest, below which a band is more likely a scrollbar or margin."""
 
 
 @dataclass(frozen=True)
@@ -246,6 +258,161 @@ def detect_grid(image: Image, params: DetectionParams | None = None) -> tuple[Ti
     return tuple(tiles)
 
 
+def _band_separators(
+    gray: NDArray[np.float32],
+    params: DetectionParams,
+) -> list[int]:
+    """Horizontal boundaries within a narrow vertical band.
+
+    The same recurrence test as :func:`axis_separators`, applied to the band
+    alone. Run over the whole frame the filmstrip's boundaries are diluted by
+    the content beside them and never clear the threshold.
+    """
+
+    import numpy as np
+
+    steps = np.abs(np.diff(gray, axis=0))
+    if steps.size == 0:
+        return []
+    scale = np.median(steps, axis=0, keepdims=True) + 1.0
+    energy = (steps > params.separator_prominence * scale).mean(axis=1)
+
+    strong = np.where(energy > params.separator_consistency)[0]
+    if not len(strong):
+        return []
+
+    groups: list[list[int]] = [[int(strong[0])]]
+    for index in strong[1:]:
+        if int(index) - groups[-1][-1] <= 2:
+            groups[-1].append(int(index))
+        else:
+            groups.append([int(index)])
+
+    cuts = [int(sum(g) / len(g)) for g in groups]
+    if len(cuts) < 2:
+        return cuts
+
+    # Thumbnails have internal edges too. Keep the spacing that recurs and drop
+    # cuts closer than most of the way to it, so a person's shoulder line inside
+    # a tile does not split that tile in two.
+    gaps = sorted(b - a for a, b in zip(cuts[:-1], cuts[1:], strict=True))
+    spacing = gaps[len(gaps) // 2]
+    kept = [cuts[0]]
+    for cut in cuts[1:]:
+        if cut - kept[-1] >= 0.7 * spacing:
+            kept.append(cut)
+    return kept
+
+
+def detect_shared_content(
+    image: Image, params: DetectionParams | None = None
+) -> tuple[Tile, ...]:
+    """Recover a screen share: one dominant region beside a participant filmstrip.
+
+    A gallery is not the only layout a call takes. When someone shares their
+    screen the frame becomes a large content region with a column of small
+    participant tiles down one edge, which the grid detector correctly refuses —
+    the cells are nothing like equal — and therefore reports as no layout at all.
+    Reporting the shape instead makes the shared content an attributable target
+    and the filmstrip participants visible rather than absent.
+    """
+
+    import cv2
+    import numpy as np
+
+    params = params or DetectionParams()
+    height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+    splits = axis_separators(gray, 1, params)
+    if not splits:
+        return ()
+
+    # A narrow band beside a split is only a candidate. Content has internal
+    # edges that also leave a narrow margin, so each candidate is validated by
+    # whether its band actually holds uniform tiles rather than assumed.
+    for split in splits:
+        for side in ("right", "left"):
+            band_width = (width - split) if side == "right" else split
+            fraction = band_width / width
+            if not params.filmstrip_min_fraction <= fraction <= params.filmstrip_max_fraction:
+                continue
+            found = _filmstrip(gray, split, side, image.shape, params)
+            if found:
+                return found
+    return ()
+
+
+def _filmstrip(
+    gray: NDArray[np.float32],
+    split: int,
+    side: str,
+    shape: tuple[int, ...],
+    params: DetectionParams,
+) -> tuple[Tile, ...]:
+    """Content plus filmstrip for one candidate split, or nothing."""
+
+    height, width = shape[0], shape[1]
+    if side == "right":
+        band = gray[:, split:]
+        band_x, band_width = split, width - split
+        content_x, content_width = 0, split
+    else:
+        band = gray[:, :split]
+        band_x, band_width = 0, split
+        content_x, content_width = split, width - split
+
+    cuts = _band_separators(band, params)
+    edges = [0, *cuts, height]
+    spans = [
+        (top, bottom)
+        for top, bottom in zip(edges[:-1], edges[1:], strict=True)
+        if bottom - top >= params.filmstrip_min_fraction * height
+    ]
+    if len(spans) < 2:
+        return ()
+
+    # Filmstrip tiles are equally sized, as gallery cells are. The strip rarely
+    # spans the full height though — there is usually a toolbar above it and a
+    # partial tile below — so match the recurring size rather than demanding
+    # that every span agree.
+    sizes = sorted(bottom - top for top, bottom in spans)
+    typical = sizes[len(sizes) // 2]
+    if typical <= 0:
+        return ()
+    spans = [
+        (top, bottom)
+        for top, bottom in spans
+        if abs((bottom - top) - typical) <= params.cell_uniformity * typical
+    ]
+    if len(spans) < 2:
+        return ()
+
+    tiles = [
+        Tile(
+            kind=RegionKind.SHARED_CONTENT,
+            x=content_x / width,
+            y=0.0,
+            width=content_width / width,
+            height=1.0,
+        )
+    ]
+    for top, bottom in spans:
+        cell = band[top + 2 : bottom - 2, :]
+        if cell.size == 0 or float(cell.std()) < params.empty_cell_variation:
+            continue
+        tiles.append(
+            Tile(
+                kind=RegionKind.PARTICIPANT,
+                x=band_x / width,
+                y=top / height,
+                width=band_width / width,
+                height=(bottom - top) / height,
+            )
+        )
+    return tuple(tiles) if len(tiles) > 1 else ()
+
+
 def detect_tiles(image: Image, params: DetectionParams | None = None) -> tuple[Tile, ...]:
     """Detect participant tiles and shared-content regions in one frame.
 
@@ -301,6 +468,11 @@ def detect_tiles(image: Image, params: DetectionParams | None = None) -> tuple[T
         grid = detect_grid(image, params)
         if len(grid) > 1:
             return grid
+        # Not a gallery. It may still be a screen share, which is a layout
+        # rather than the absence of one.
+        shared = detect_shared_content(image, params)
+        if shared:
+            return shared
 
     tiles.sort(key=lambda t: (round(t.y, 2), round(t.x, 2)))
     return tuple(tiles)
