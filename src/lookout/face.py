@@ -22,6 +22,7 @@ from .frames import Image
 from .models import HeadPose
 
 __all__ = [
+    "YuNetFaceObserver",
     "Landmarks",
     "FaceObservation",
     "FaceObserver",
@@ -159,3 +160,118 @@ class MediaPipeFaceObserver:
 
     def close(self) -> None:
         self._landmarker.close()
+
+
+# Frontal faces sit with the nose a little below the eye line; subtracting that
+# bias puts "looking at the camera" near zero. The scale factors turn landmark
+# offsets, measured in interocular distances, into angles.
+_FRONTAL_NOSE_DROP = 0.55
+_YAW_PER_IOD = 0.45
+_PITCH_PER_IOD = 0.35
+_PITCH_PRIOR = -0.16
+
+
+class YuNetFaceObserver:
+    """Face observation from OpenCV's YuNet detector.
+
+    Requires the ``cv`` extra and a YuNet ONNX model, which the user supplies.
+
+    YuNet gives a box, a score and five landmarks: both eyes, the nose tip and
+    the mouth corners. There is no iris, so this observer cannot see where the
+    eyes point — only where the head does. It reports the eyes as open and
+    centred, because zero is the only eye contribution it can justify, and the
+    geometric estimator therefore returns head orientation alone.
+
+    That is a real limitation rather than a tuning issue, and a run using this
+    observer says so: see :func:`describe`. It exists because MediaPipe's Face
+    Landmarker does not run everywhere, and a machine without it otherwise has
+    no path through the pipeline at all.
+    """
+
+    role = "face"
+
+    def __init__(self, model_path: str, score_threshold: float = 0.55) -> None:
+        import cv2
+
+        self._detector = cv2.FaceDetectorYN.create(
+            str(model_path), "", (320, 320), score_threshold, 0.3, 5000
+        )
+
+    def observe(self, image: Image) -> FaceObservation | None:
+        height, width = image.shape[:2]
+        if height < 2 or width < 2:
+            return None
+
+        self._detector.setInputSize((width, height))
+        _, detections = self._detector.detect(image)
+        if detections is None or len(detections) == 0:
+            return None
+
+        face = max(detections, key=lambda row: float(row[2] * row[3]))
+        return self._observation(face, width, height)
+
+    def _observation(
+        self, face: NDArray[np.float32], width: int, height: int
+    ) -> FaceObservation:
+        score = float(face[14])
+        right_eye = (float(face[4]), float(face[5]))
+        left_eye = (float(face[6]), float(face[7]))
+        nose = (float(face[8]), float(face[9]))
+
+        eye_mid_x = 0.5 * (right_eye[0] + left_eye[0])
+        eye_mid_y = 0.5 * (right_eye[1] + left_eye[1])
+        iod = max(abs(left_eye[0] - right_eye[0]), 1.0)
+
+        horizontal = (nose[0] - eye_mid_x) / iod
+        vertical = (nose[1] - eye_mid_y) / iod - _FRONTAL_NOSE_DROP
+
+        yaw = max(-0.35, min(0.35, horizontal * _YAW_PER_IOD))
+        pitch = max(-0.40, min(0.05, _PITCH_PRIOR - vertical * _PITCH_PER_IOD))
+        roll = math.atan2(left_eye[1] - right_eye[1], max(left_eye[0] - right_eye[0], 1.0))
+
+        landmarks = _synthetic_landmarks(right_eye, left_eye, width, height)
+        return FaceObservation(
+            landmarks=landmarks,
+            head_pose=HeadPose(yaw=yaw, pitch=pitch, roll=roll),
+            blendshapes={},
+            detection_confidence=max(0.0, min(1.0, score)),
+        )
+
+    def describe(self) -> str:
+        return "yunet_head_pose"
+
+
+def _synthetic_landmarks(
+    right_eye: tuple[float, float],
+    left_eye: tuple[float, float],
+    width: int,
+    height: int,
+) -> Landmarks:
+    """Place the landmarks the geometric estimator reads, and nothing else.
+
+    The eye corners are positioned around the detected eye centres so the
+    interocular distance is real, and each iris is placed at the centre of its
+    own eye so the eye contribution to gaze is exactly zero. Anything else would
+    be inventing an eye direction from data that does not contain one.
+    """
+
+    landmarks = np.zeros((478, 3), dtype=np.float32)
+    # A plausible open-eye aspect: the geometric estimator reads openness from
+    # the lid box, and a squint here would understate confidence for a reason
+    # this observer cannot actually see.
+    half_w = max(abs(left_eye[0] - right_eye[0]) / 6.0, 1.0)
+    half_h = half_w * 0.45
+
+    for centre, corners, iris in (
+        (right_eye, RIGHT_EYE, RIGHT_IRIS),
+        (left_eye, LEFT_EYE, LEFT_IRIS),
+    ):
+        cx, cy = centre[0] / width, centre[1] / height
+        dx, dy = half_w / width, half_h / height
+        landmarks[corners["inner"], :2] = (cx + dx, cy)
+        landmarks[corners["outer"], :2] = (cx - dx, cy)
+        landmarks[corners["top"], :2] = (cx, cy - dy)
+        landmarks[corners["bottom"], :2] = (cx, cy + dy)
+        for index in iris:
+            landmarks[index, :2] = (cx, cy)  # centred: no eye contribution
+    return landmarks
