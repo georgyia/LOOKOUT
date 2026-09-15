@@ -121,6 +121,10 @@ ended or began there. An id is carried only where geometry supports it, so a
 change that reshapes the screen carries nothing and the ids either side are
 unrelated.
 
+Participant count is sampling-dependent at the margins: a coarser run misses
+short layouts that a finer one sees, and no debounce recovers an arrangement
+that was never sampled (see [note 21](research/21-layout-debounce.md)).
+
 A run containing any such change reports its participant count as an upper
 bound: the same person either side appears twice, and nothing available without
 a name label or a biometric comparison links them. See
