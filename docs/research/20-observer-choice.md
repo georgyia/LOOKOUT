@@ -76,5 +76,5 @@ matrix.
   understating confidence for an unseen reason, at the cost of overstating it
   when someone blinks.
 - Two adapters now produce `FaceObservation`, and only one fills `blendshapes`.
-  Anything depending on those must handle their absence; see note 21 on the
-  mouth cue, which did not.
+  Anything depending on those must handle their absence; the mouth cue did not,
+  and [note 22](22-mouth-cue.md) records what that cost.
