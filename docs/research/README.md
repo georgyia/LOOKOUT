@@ -54,3 +54,4 @@ numbers over paragraphs.
 - `19-identity-continuity.md` — identity across a layout change (#50)
 - `20-observer-choice.md` — shipping the observer that works (#54)
 - `21-layout-debounce.md` — what counts as a layout (#56)
+- `22-mouth-cue.md` — a cue that was never reached (#58)

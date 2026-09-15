@@ -42,6 +42,13 @@ Landmarks = NDArray[np.float32]
 RIGHT_IRIS = (468, 469, 470, 471, 472)  # image-left eye (subject's right)
 LEFT_IRIS = (473, 474, 475, 476, 477)  # image-right eye (subject's left)
 
+_KEPT_BLENDSHAPES = frozenset({"jawOpen"})
+
+# Inner lip points, and the mouth corners YuNet also reports.
+MOUTH_TOP = 13
+MOUTH_BOTTOM = 14
+MOUTH_CORNERS = (61, 291)
+
 # Eye corner and lid indices used by the geometric baseline.
 RIGHT_EYE = {"inner": 133, "outer": 33, "top": 159, "bottom": 145}
 LEFT_EYE = {"inner": 362, "outer": 263, "top": 386, "bottom": 374}
@@ -79,7 +86,7 @@ class FaceObservation:
     """What an observer sees in one tile crop.
 
     Coordinates are normalized to the crop. ``blendshapes`` holds MediaPipe eye
-    coefficients (e.g. ``eyeLookInLeft``) when available.
+    coefficients (e.g. ``eyeLookInLeft``) and ``jawOpen`` when available.
     """
 
     landmarks: Landmarks
@@ -151,8 +158,12 @@ class MediaPipeFaceObserver:
         blendshapes: dict[str, float] = {}
         if result.face_blendshapes:
             for category in result.face_blendshapes[0]:
-                if category.category_name.startswith("eyeLook"):
-                    blendshapes[category.category_name] = float(category.score)
+                # Eye coefficients for gaze, jawOpen for the speaker cue. The
+                # filter is here to avoid carrying forty-odd categories, not to
+                # exclude anything a stage actually reads.
+                name = category.category_name
+                if name.startswith("eyeLook") or name in _KEPT_BLENDSHAPES:
+                    blendshapes[name] = float(category.score)
 
         return FaceObservation(
             landmarks, head_pose, blendshapes, detection_confidence=detection_confidence
@@ -229,7 +240,8 @@ class YuNetFaceObserver:
         pitch = max(-0.40, min(0.05, _PITCH_PRIOR - vertical * _PITCH_PER_IOD))
         roll = math.atan2(left_eye[1] - right_eye[1], max(left_eye[0] - right_eye[0], 1.0))
 
-        landmarks = _synthetic_landmarks(right_eye, left_eye, width, height)
+        mouth = ((float(face[10]), float(face[11])), (float(face[12]), float(face[13])))
+        landmarks = _synthetic_landmarks(right_eye, left_eye, mouth, width, height)
         return FaceObservation(
             landmarks=landmarks,
             head_pose=HeadPose(yaw=yaw, pitch=pitch, roll=roll),
@@ -244,6 +256,7 @@ class YuNetFaceObserver:
 def _synthetic_landmarks(
     right_eye: tuple[float, float],
     left_eye: tuple[float, float],
+    mouth: tuple[tuple[float, float], tuple[float, float]] | None,
     width: int,
     height: int,
 ) -> Landmarks:
@@ -274,4 +287,8 @@ def _synthetic_landmarks(
         landmarks[corners["bottom"], :2] = (cx, cy + dy)
         for index in iris:
             landmarks[index, :2] = (cx, cy)  # centred: no eye contribution
+
+    if mouth is not None:
+        landmarks[MOUTH_CORNERS[0], :2] = (mouth[0][0] / width, mouth[0][1] / height)
+        landmarks[MOUTH_CORNERS[1], :2] = (mouth[1][0] / width, mouth[1][1] / height)
     return landmarks
