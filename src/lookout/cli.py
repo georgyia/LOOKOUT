@@ -14,7 +14,7 @@ from dataclasses import replace
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from . import artifacts, report, runrecord, store
 from .compare import Comparison, compare
@@ -35,6 +35,9 @@ from .pipeline import (
     geometric_stage,
 )
 from .runrecord import AdapterInfo, RunRecord
+
+if TYPE_CHECKING:
+    from .face import FaceObserver
 
 REPORT = "report.json"
 
@@ -63,6 +66,7 @@ def _write_reports(
     *,
     video: str | None = None,
     adapters: tuple[AdapterInfo, ...] = (),
+    declared: tuple[Degradation, ...] = (),
     provenance_from: RunRecord | None = None,
 ) -> RunRecord:
     """Write the run record and the rendered event tables.
@@ -107,7 +111,7 @@ def _write_reports(
         diagnostics=diagnostics,
         timing=outcome.timing,
         identity_breaks=outcome.identity_breaks,
-        degradations=detect_degradations(coverage) + warnings,
+        degradations=detect_degradations(coverage) + warnings + declared,
         video=video,
         adapters=adapters,
         command=sys.argv,
@@ -175,11 +179,32 @@ def _print_summary(record: RunRecord) -> None:
     )
 
 
-def _cmd_analyze(args: argparse.Namespace) -> None:
-    from .face import MediaPipeFaceObserver
+NO_IRIS = Degradation(
+    stage="observation",
+    code="no_iris_signal",
+    detail=(
+        "The face observer reports five landmarks and no iris, so gaze is head "
+        "orientation rather than eye direction."
+    ),
+    impact=(
+        "Neighbouring tiles cannot be told apart, and a frontal face maps near "
+        "screen centre regardless of where its eyes point."
+    ),
+)
 
-    observer = MediaPipeFaceObserver(args.model)
-    adapters = [_adapter("face", "MediaPipeFaceObserver", args.model, "mediapipe")]
+
+def _cmd_analyze(args: argparse.Namespace) -> None:
+    if args.observer == "yunet":
+        from .face import YuNetFaceObserver
+
+        observer_impl: object = YuNetFaceObserver(args.model)
+        adapters = [_adapter("face", "YuNetFaceObserver", args.model, "opencv-python")]
+    else:
+        from .face import MediaPipeFaceObserver
+
+        observer_impl = MediaPipeFaceObserver(args.model)
+        adapters = [_adapter("face", "MediaPipeFaceObserver", args.model, "mediapipe")]
+    observer = cast("FaceObserver", observer_impl)
 
     if args.gaze == "appearance":
         if not args.weights:
@@ -201,6 +226,7 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
         outcome,
         video=args.video,
         adapters=tuple(adapters),
+        declared=(NO_IRIS,) if args.observer == "yunet" else (),
     )
     _print_summary(record)
 
@@ -330,7 +356,15 @@ def main() -> None:
     analyze_parser.add_argument("video")
     analyze_parser.add_argument("--out", required=True)
     analyze_parser.add_argument(
-        "--model", required=True, help="MediaPipe face_landmarker.task path"
+        "--observer",
+        choices=["mediapipe", "yunet"],
+        default="mediapipe",
+        help="face observer; yunet has no iris landmarks and sees head pose only",
+    )
+    analyze_parser.add_argument(
+        "--model",
+        required=True,
+        help="model for the chosen observer (face_landmarker.task, or a YuNet .onnx)",
     )
     analyze_parser.add_argument("--gaze", choices=["geometric", "appearance"], default="geometric")
     analyze_parser.add_argument("--weights", help="gaze model weights (for --gaze appearance)")

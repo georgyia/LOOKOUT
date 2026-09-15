@@ -52,3 +52,4 @@ numbers over paragraphs.
 - `17-streaming.md` — bounding memory instead of recording length (#46)
 - `18-screen-share.md` — describing a screen share rather than declining it (#48)
 - `19-identity-continuity.md` — identity across a layout change (#50)
+- `20-observer-choice.md` — shipping the observer that works (#54)

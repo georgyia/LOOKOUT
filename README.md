@@ -73,6 +73,9 @@ never scored against ground truth says so instead of quoting an accuracy. See
 
 ```bash
 lookout analyze clip.mp4 --out run/ --model models/face_landmarker.task
+
+# where MediaPipe will not run: head pose only, and the report says so
+lookout analyze clip.mp4 --out run/ --observer yunet --model yunet.onnx
 lookout report --out run/                    # re-render without re-running
 lookout report --out run/ --truth truth.jsonl  # ...and score it
 
