@@ -73,3 +73,78 @@ def test_aggregate_speaker_segments_merges_and_filters() -> None:
     assert segments[0].start_time == 0.0
     assert segments[0].end_time == 0.4
     assert segments[0].cue == "mouth"
+
+
+# ------------------------------------------------------------- the dead branch
+
+from lookout.face import MOUTH_BOTTOM, MOUTH_CORNERS, MOUTH_TOP  # noqa: E402
+
+
+def _bare_observation(**kwargs) -> FaceObservation:
+    """An observation with eyes but no mouth landmarks at all."""
+
+    landmarks = np.zeros((478, 3), dtype=np.float32)
+    landmarks[list(range(468, 473)), :2] = (0.35, 0.5)
+    landmarks[list(range(473, 478)), :2] = (0.65, 0.5)
+    return FaceObservation(landmarks, HeadPose(0, 0, 0), kwargs.get("blendshapes", {}), 1.0)
+
+
+def test_jaw_open_survives_the_blendshape_filter() -> None:
+    """The bug: MediaPipeFaceObserver kept only eyeLook* coefficients, so the
+    preferred mouth signal was discarded at the source and the branch reading it
+    had never run outside tests."""
+
+    from lookout.face import _KEPT_BLENDSHAPES
+
+    assert "jawOpen" in _KEPT_BLENDSHAPES
+
+
+def test_the_blendshape_is_preferred_when_present() -> None:
+    assert mouth_open_ratio(_bare_observation(blendshapes={"jawOpen": 0.42})) == pytest.approx(
+        0.42
+    )
+
+
+def test_an_observer_without_a_mouth_declines_rather_than_guesses() -> None:
+    """Measuring between two zeroed landmarks returns a number that looks like a
+    measurement. The absence of a cue is not a closed mouth."""
+
+    assert mouth_open_ratio(_bare_observation()) is None
+
+
+def test_the_lip_gap_is_used_when_the_blendshape_is_absent() -> None:
+    observation = _bare_observation()
+    observation.landmarks[MOUTH_TOP, :2] = (0.5, 0.70)
+    observation.landmarks[MOUTH_BOTTOM, :2] = (0.5, 0.85)
+
+    ratio = mouth_open_ratio(observation)
+    assert ratio is not None
+    assert ratio == pytest.approx(0.5, abs=1e-5)  # gap 0.15 over iod 0.3
+
+
+def test_corner_separation_is_the_last_resort() -> None:
+    """Weaker than lip gap — it widens with a smile — but real, and some
+    observers report only the corners."""
+
+    observation = _bare_observation()
+    observation.landmarks[MOUTH_CORNERS[0], :2] = (0.40, 0.8)
+    observation.landmarks[MOUTH_CORNERS[1], :2] = (0.61, 0.8)
+
+    ratio = mouth_open_ratio(observation)
+    assert ratio is not None
+    assert ratio == pytest.approx(0.7, abs=1e-4)  # separation 0.21 over iod 0.3
+
+
+def test_the_lip_gap_wins_over_the_corners() -> None:
+    observation = _bare_observation()
+    observation.landmarks[MOUTH_TOP, :2] = (0.5, 0.70)
+    observation.landmarks[MOUTH_BOTTOM, :2] = (0.5, 0.85)
+    observation.landmarks[MOUTH_CORNERS[0], :2] = (0.40, 0.8)
+    observation.landmarks[MOUTH_CORNERS[1], :2] = (0.61, 0.8)
+
+    assert mouth_open_ratio(observation) == pytest.approx(0.5, abs=1e-5)
+
+
+def test_a_degenerate_face_declines() -> None:
+    flat = FaceObservation(np.zeros((478, 3), dtype=np.float32), HeadPose(0, 0, 0), {}, 1.0)
+    assert mouth_open_ratio(flat) is None

@@ -124,7 +124,7 @@ def test_eyes_are_reported_open_rather_than_squinting() -> None:
 
 
 def test_synthetic_landmarks_put_each_iris_at_its_own_eye() -> None:
-    landmarks = _synthetic_landmarks((40.0, 50.0), (80.0, 50.0), width=120, height=120)
+    landmarks = _synthetic_landmarks((40.0, 50.0), (80.0, 50.0), None, width=120, height=120)
     right = landmarks[list(RIGHT_IRIS), :2].mean(axis=0)
     left = landmarks[list(LEFT_IRIS), :2].mean(axis=0)
 
@@ -147,3 +147,15 @@ def test_head_pose_stays_within_its_documented_range() -> None:
             assert -0.35 <= pose.yaw <= 0.35
             assert -0.40 <= pose.pitch <= 0.05
             assert isinstance(pose, HeadPose)
+
+
+def test_mouth_corners_are_kept_rather_than_discarded() -> None:
+    """YuNet detects them; #58 found the pipeline was throwing them away."""
+
+    from lookout.face import MOUTH_CORNERS
+    from lookout.speaker import mouth_open_ratio
+
+    observation = _observe()
+    corners = observation.landmarks[list(MOUTH_CORNERS), :2]
+    assert corners.any(), "the mouth corners should be populated"
+    assert mouth_open_ratio(observation) is not None

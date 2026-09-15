@@ -1,7 +1,9 @@
 """Speaker context from visual cues.
 
 Two cues, both offline and visual: the active-speaker highlight many clients
-draw around a tile, and mouth motion from face landmarks. Per-frame speaker
+draw around a tile, and mouth motion from face landmarks. The highlight is
+client-specific — it depends on a client drawing a ring — so a recording from a
+client that does not is left with the mouth alone. Per-frame speaker
 flags are aggregated into :class:`SpeakerSegment`s. Audio diarization is a
 separate later issue; this module never uses audio.
 """
@@ -12,7 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .face import FaceObservation
+from .face import MOUTH_CORNERS, FaceObservation
 from .frames import Image
 from .layout import Tile
 from .models import RegionKind
@@ -101,23 +103,52 @@ def detect_highlighted_tile(
     return best_index
 
 
-def mouth_open_ratio(observation: FaceObservation) -> float:
-    """Vertical mouth gap normalized by interocular distance.
+def mouth_open_ratio(observation: FaceObservation) -> float | None:
+    """How open the mouth is, or ``None`` when the observer cannot say.
 
-    Prefers the MediaPipe ``jawOpen`` blendshape when present; otherwise uses the
-    inner-lip landmark gap.
+    Three sources, in descending order of directness: MediaPipe's ``jawOpen``
+    coefficient, the inner-lip landmark gap, and the separation of the mouth
+    corners. All are normalized so they are comparable across face sizes.
+
+    Returning ``None`` matters. An observer without mouth landmarks would
+    otherwise measure the distance between two zeroed points and report a number
+    that looks like a measurement — the absence of a cue is not a closed mouth.
     """
 
     jaw = observation.blendshapes.get("jawOpen")
     if jaw is not None:
         return float(jaw)
 
+    iod = _interocular(observation)
+    if iod <= _EPS:
+        return None
+
     landmarks = observation.landmarks
-    gap = abs(float(landmarks[MOUTH_BOTTOM, 1]) - float(landmarks[MOUTH_TOP, 1]))
-    right = np.array(observation.right_iris)
-    left = np.array(observation.left_iris)
-    iod = float(np.linalg.norm(right - left))
-    return gap / iod if iod > _EPS else 0.0
+    top, bottom = landmarks[MOUTH_TOP, :2], landmarks[MOUTH_BOTTOM, :2]
+    if _present(top) and _present(bottom):
+        return abs(float(bottom[1]) - float(top[1])) / iod
+
+    # Corner separation is a weaker signal than lip gap — it widens with a smile
+    # as well as with speech — but it is a real one, and some observers report
+    # only the corners.
+    left_corner = landmarks[MOUTH_CORNERS[0], :2]
+    right_corner = landmarks[MOUTH_CORNERS[1], :2]
+    if _present(left_corner) and _present(right_corner):
+        return float(np.linalg.norm(np.asarray(right_corner) - np.asarray(left_corner))) / iod
+
+    return None
+
+
+def _present(point: np.ndarray) -> bool:
+    """Whether a landmark was populated rather than left at the origin."""
+
+    return bool(abs(float(point[0])) > _EPS or abs(float(point[1])) > _EPS)
+
+
+def _interocular(observation: FaceObservation) -> float:
+    right = np.asarray(observation.right_iris)
+    left = np.asarray(observation.left_iris)
+    return float(np.linalg.norm(right - left))
 
 
 def aggregate_speaker_segments(
