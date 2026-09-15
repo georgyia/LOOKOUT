@@ -82,6 +82,21 @@ class AnalysisConfig:
     min_fixation: float = 0.15
     max_gap: float = 0.3
     event_min_duration: float = 0.2
+    min_layout_seconds: float = 2.0
+    """How long an arrangement must hold to count as a layout rather than a
+    transition.
+
+    In seconds, deliberately. Deriving this from the sampling rate makes the
+    debounce shrink as sampling improves, so a client animating between layouts
+    produces intermediate states that qualify — and since identity is not
+    carried across a reshape, each one mints participants who were never in the
+    call. Sampling rate is a cost and accuracy knob; it should not change how
+    many people a recording appears to contain.
+
+    Two seconds removes most of that sensitivity but not all of it: coarse
+    sampling also misses short layouts outright, which no debounce can recover.
+    See research note 21."""
+
     min_calibration_labels: int = 20
     """Weak labels a viewer needs before its mapping is fit rather than assumed.
 
@@ -286,7 +301,10 @@ def analyze(
             per_frame_tiles.append((frame.timestamp, detect_tiles(frame.image, config.detection)))
 
     with watch.stage("segment_layouts"):
-        intervals = segment_layouts(per_frame_tiles, min_stable_seconds=2.0 / config.target_fps)
+        # A layout cannot be confirmed by fewer samples than two, so the frame
+        # floor still applies where sampling is coarser than the threshold.
+        stable_for = max(config.min_layout_seconds, 2.0 / config.target_fps)
+        intervals = segment_layouts(per_frame_tiles, min_stable_seconds=stable_for)
         recording_layouts = build_layouts(
             intervals,
             viewer_id=RECORDING_VIEWER,
